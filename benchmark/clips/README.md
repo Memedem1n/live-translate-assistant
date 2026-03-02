@@ -15,9 +15,6 @@ Example clip entry:
   "id": "meeting_01",
   "audio_path": "meeting_01.wav",
   "reference_text": "Optional fallback text if STT returns empty.",
-  "context_lines": [
-    "[remote] Previous question line",
-    "[self] Previous answer line"
-  ]
+  "context_lines": ["[remote] Previous question line", "[self] Previous answer line"]
 }
 ```

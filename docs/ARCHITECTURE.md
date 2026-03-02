@@ -1,6 +1,7 @@
 # Architecture (V1.3)
 
 ## Goal
+
 A local-first Windows desktop assistant for live meetings with:
 
 - English transcript (remote + self)
@@ -11,6 +12,7 @@ A local-first Windows desktop assistant for live meetings with:
 ## Runtime Components
 
 1. Electron Main Process
+
 - Window lifecycle (control + overlay)
 - IPC orchestration and runtime state fanout
 - Session phase/state machine (`idle -> starting -> running -> ...`)
@@ -20,6 +22,7 @@ A local-first Windows desktop assistant for live meetings with:
 - Encrypted history persistence + export manager (opt-in, local disk)
 
 2. Python STT Worker (`scripts/stt_worker.py`)
+
 - Accepts NDJSON commands from stdin
 - Buffers PCM16 chunks by speaker channel
 - Uses per-channel silence/RMS gating and faster-whisper transcription
@@ -27,6 +30,7 @@ A local-first Windows desktop assistant for live meetings with:
 - Emits `ready`, `transcript`, `diagnostics`, and `error` events on stdout (NDJSON)
 
 3. Renderer (React)
+
 - Control window: session controls, model settings, source selection, VAD tuning, diagnostics panel, transcript/assist logs
 - Overlay window: transparent live card with EN transcript + TR translation + EN/TR suggestion
 - Captures system+microphone audio and ships chunks to main process
@@ -35,19 +39,24 @@ A local-first Windows desktop assistant for live meetings with:
 ## Data Flow
 
 1. Renderer captures audio on two channels:
+
 - `remote`: system audio stream (meeting participants)
 - `self`: microphone stream (user voice)
 
 2. Main forwards audio chunks to STT worker when session is `running`:
+
 - `audio:chunk -> sttBridge -> worker stdin`
 
 3. Session start uses worker readiness handshake:
+
 - `session:start -> start_session(vad) -> worker ready -> phase running`
 
 4. Worker emits transcript and diagnostics events:
+
 - `worker stdout -> sttBridge -> ipc broadcast`
 
 5. For `remote` final transcript, main calls AssistService:
+
 - Builds short context from rolling transcript history
 - Calls Ollama `/api/chat` with strict JSON output contract
 - Streams partial raw output, then emits structured final assist payload
@@ -55,6 +64,7 @@ A local-first Windows desktop assistant for live meetings with:
 - Applies confidence heuristics and optional fallback prompt path when primary parse/quality is weak
 
 6. Renderer updates:
+
 - Control window logs full stream
 - Overlay shows latest remote sentence and matched assist card
 - Overlay runtime state is synced from main via `overlay:state`
@@ -62,6 +72,7 @@ A local-first Windows desktop assistant for live meetings with:
 - Latency dashboard renders p50/p95 from `metrics:latency`
 
 7. History + export:
+
 - Session transcript/assist records are accumulated in main process during runtime
 - If `historyOptIn=true` and secure storage is available, session snapshots are encrypted and persisted under app userData
 - `history:export` produces JSON or Markdown exports under app userData export directory

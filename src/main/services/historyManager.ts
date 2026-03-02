@@ -85,7 +85,9 @@ export class HistoryManager {
     }
 
     const sessions: HistorySessionSummary[] = []
-    const entries = fs.readdirSync(this.historyDirPath).filter((name) => name.endsWith(HISTORY_FILE_SUFFIX))
+    const entries = fs
+      .readdirSync(this.historyDirPath)
+      .filter((name) => name.endsWith(HISTORY_FILE_SUFFIX))
 
     for (const name of entries) {
       const payload = this.readPayload(path.join(this.historyDirPath, name))
@@ -114,7 +116,9 @@ export class HistoryManager {
       return null
     }
 
-    const entries = fs.readdirSync(this.historyDirPath).filter((name) => name.endsWith(HISTORY_FILE_SUFFIX))
+    const entries = fs
+      .readdirSync(this.historyDirPath)
+      .filter((name) => name.endsWith(HISTORY_FILE_SUFFIX))
 
     for (const name of entries) {
       const payload = this.readPayload(path.join(this.historyDirPath, name))

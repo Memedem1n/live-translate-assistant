@@ -1,6 +1,7 @@
 ﻿# Last Session - 2026-03-02
 
 ## Completed Today
+
 - Bootstrapped LiveTranslate Assistant in Electron + React + TypeScript.
 - Implemented dual-window app shell:
   - Control window
@@ -22,11 +23,13 @@
 - Installed dependencies and passed TypeScript typecheck.
 
 ## Current Status
+
 - Project compiles at type level (`npm run typecheck` passed).
 - Runtime validation with real meeting audio still pending.
 - STT quality and latency tuning still pending.
 
 ## Next Session Priority
+
 1. Run app with real audio routes and validate transcript quality.
 2. Tune STT worker thresholds (`MIN_AUDIO_MS`, `SILENCE_MS`, `VOICE_RMS_THRESHOLD`).
 3. Tune prompt/model for strict JSON reliability and faster first token.

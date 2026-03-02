@@ -126,11 +126,15 @@ export class SettingsManager {
 
       if (safeStorage.isEncryptionAvailable()) {
         if (parsed.answerModelEncrypted) {
-          parsed.answerModel = safeStorage.decryptString(Buffer.from(parsed.answerModelEncrypted, 'base64'))
+          parsed.answerModel = safeStorage.decryptString(
+            Buffer.from(parsed.answerModelEncrypted, 'base64')
+          )
         }
 
         if (parsed.ollamaBaseUrlEncrypted) {
-          parsed.ollamaBaseUrl = safeStorage.decryptString(Buffer.from(parsed.ollamaBaseUrlEncrypted, 'base64'))
+          parsed.ollamaBaseUrl = safeStorage.decryptString(
+            Buffer.from(parsed.ollamaBaseUrlEncrypted, 'base64')
+          )
         }
       }
 
@@ -178,8 +182,12 @@ export class SettingsManager {
     }
 
     if (safeStorage.isEncryptionAvailable()) {
-      payload.answerModelEncrypted = safeStorage.encryptString(this.settings.answerModel).toString('base64')
-      payload.ollamaBaseUrlEncrypted = safeStorage.encryptString(this.settings.ollamaBaseUrl).toString('base64')
+      payload.answerModelEncrypted = safeStorage
+        .encryptString(this.settings.answerModel)
+        .toString('base64')
+      payload.ollamaBaseUrlEncrypted = safeStorage
+        .encryptString(this.settings.ollamaBaseUrl)
+        .toString('base64')
       delete payload.answerModel
       delete payload.ollamaBaseUrl
     }

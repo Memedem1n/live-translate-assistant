@@ -23,7 +23,8 @@ body,
 
 body {
   font-family: 'Segoe UI', 'Noto Sans', sans-serif;
-  background: radial-gradient(1200px 800px at 10% -20%, #1a4764 0%, transparent 55%),
+  background:
+    radial-gradient(1200px 800px at 10% -20%, #1a4764 0%, transparent 55%),
     radial-gradient(1000px 700px at 100% 0%, #19493d 0%, transparent 60%), var(--bg);
   color: var(--text);
 }
@@ -192,4 +193,3 @@ button.danger {
     grid-template-columns: 1fr;
   }
 }
-

@@ -53,7 +53,8 @@ const api: WindowAPI = {
   onOverlayState: (cb) => createListener<OverlayStateEvent>('overlay:state', cb),
   onDiagnosticsUpdate: (cb) => createListener<WorkerDiagnosticsEvent>('diagnostics:update', cb),
   onLatencyMetrics: (cb) => createListener<LatencyMetricsEvent>('metrics:latency', cb),
-  onShortcutMuteToggle: (cb) => createListener<boolean>('shortcut:mute-toggle', (muted) => cb(muted))
+  onShortcutMuteToggle: (cb) =>
+    createListener<boolean>('shortcut:mute-toggle', (muted) => cb(muted))
 }
 
 contextBridge.exposeInMainWorld('api', api)

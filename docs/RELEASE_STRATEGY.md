@@ -1,6 +1,7 @@
 # Release Strategy (V1)
 
 ## Distribution model
+
 - Platform: Windows x64
 - Artifact type: NSIS installer (`.exe`)
 - Build source: GitHub Actions workflow (`.github/workflows/windows-installer.yml`)
@@ -9,6 +10,7 @@
   - Tag push (`v*`)
 
 ## Update strategy
+
 - V1 policy: manual update delivery.
 - Each release publishes versioned installer artifacts and checksum file (`SHA256SUMS.txt`).
 - Clients update by downloading and running the latest installer.
@@ -17,6 +19,7 @@
   - If regression is detected, re-publish prior stable tag as latest recommended build.
 
 ## Security and integrity
+
 - `asar` packaging enabled.
 - Sourcemaps excluded from installer payload.
 - Critical resource (`scripts/stt_worker.py`) shipped via `extraResources`.
@@ -31,6 +34,7 @@
   - `scripts/check_codesign_readiness.ps1`
 
 ## Release checklist
+
 1. Confirm `npm run typecheck` passes on target branch.
 2. Confirm `npm run build` passes and app starts locally.
 3. Verify STT worker path packaging (`resources/scripts/stt_worker.py`) in built app.
@@ -44,11 +48,15 @@
    - metadata files (`.yml`, optional `.blockmap`/`.zip`)
    - `SHA256SUMS.txt`
 10. Validate installer on clean Windows test machine:
-   - install
-   - start session
-   - verify audio capture/transcript/assist flow
-   - stop session and restart app
+
+- install
+- start session
+- verify audio capture/transcript/assist flow
+- stop session and restart app
+
 11. Publish release notes:
-   - highlight breaking changes
-   - mention migration steps (if any)
+
+- highlight breaking changes
+- mention migration steps (if any)
+
 12. Mark release as non-draft after final smoke test.

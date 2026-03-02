@@ -27,12 +27,16 @@ export function OverlayView(): React.JSX.Element {
 
         <div>
           <div className="overlay-label">Remote (EN)</div>
-          <div className="overlay-text">{latestRemote?.textEn || 'Waiting for remote speech...'}</div>
+          <div className="overlay-text">
+            {latestRemote?.textEn || 'Waiting for remote speech...'}
+          </div>
         </div>
 
         <div>
           <div className="overlay-label">Translation (TR)</div>
-          <div className="overlay-text">{latestAssist?.translationTr || 'Translation will appear here.'}</div>
+          <div className="overlay-text">
+            {latestAssist?.translationTr || 'Translation will appear here.'}
+          </div>
         </div>
 
         <div>

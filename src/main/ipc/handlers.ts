@@ -8,7 +8,6 @@ import {
   HistoryExportRequest,
   HistoryExportResult,
   LatencyMetricsEvent,
-  LatencyStatSummary,
   OverlaySettings,
   OverlayStateEvent,
   SessionHistoryRecord,
@@ -24,6 +23,7 @@ import { AssistService } from '../services/assistService'
 import { HistoryManager } from '../services/historyManager'
 import { SettingsManager } from '../services/settingsManager'
 import { SttBridge } from '../services/sttBridge'
+import { buildLatencySummary } from '../utils/latencyStats'
 
 interface WindowRefs {
   controlWindow: BrowserWindow
@@ -62,7 +62,8 @@ let overlayState: OverlayStateEvent = {
 }
 let assistAbortController: AbortController | null = null
 let assistTranscriptId: string | null = null
-let audioChunkListener: ((event: Electron.IpcMainEvent, chunk: AudioChunkInput) => void) | null = null
+let audioChunkListener: ((event: Electron.IpcMainEvent, chunk: AudioChunkInput) => void) | null =
+  null
 let intentionalWorkerStop = false
 
 let sttFirstChunkHistory: number[] = []
@@ -134,7 +135,8 @@ function applyOverlaySettings(settings: OverlaySettings, options?: { persist?: b
   const next: OverlayStateEvent = {
     visible: settings.visible !== undefined ? settings.visible : overlayState.visible,
     opacity: settings.opacity !== undefined ? clampOpacity(settings.opacity) : overlayState.opacity,
-    clickThrough: settings.clickThrough !== undefined ? settings.clickThrough : overlayState.clickThrough
+    clickThrough:
+      settings.clickThrough !== undefined ? settings.clickThrough : overlayState.clickThrough
   }
 
   overlayState = next
@@ -252,31 +254,14 @@ function resolveSessionForExport(sessionId?: string): SessionHistoryRecord | nul
   return null
 }
 
-function percentile(values: number[], ratio: number): number | null {
-  if (values.length === 0) return null
-  const sorted = [...values].sort((a, b) => a - b)
-  const idx = Math.min(sorted.length - 1, Math.max(0, Math.ceil(sorted.length * ratio) - 1))
-  return Number(sorted[idx].toFixed(2))
-}
-
-function buildSummary(values: number[]): LatencyStatSummary {
-  const latest = values.length > 0 ? Number(values[values.length - 1].toFixed(2)) : null
-  return {
-    latest,
-    p50: percentile(values, 0.5),
-    p95: percentile(values, 0.95),
-    count: values.length
-  }
-}
-
 function emitLatencyMetrics(): void {
   const total = workerTranscriptCount + workerErrorCount
   const workerErrorRate = total > 0 ? Number((workerErrorCount / total).toFixed(4)) : 0
 
   const payload: LatencyMetricsEvent = {
-    sttFirstChunkMs: buildSummary(sttFirstChunkHistory),
-    assistFirstTokenMs: buildSummary(assistFirstTokenHistory),
-    assistFinalMs: buildSummary(assistFinalHistory),
+    sttFirstChunkMs: buildLatencySummary(sttFirstChunkHistory),
+    assistFirstTokenMs: buildLatencySummary(assistFirstTokenHistory),
+    assistFinalMs: buildLatencySummary(assistFinalHistory),
     workerErrorRate,
     updatedAtMs: Date.now()
   }

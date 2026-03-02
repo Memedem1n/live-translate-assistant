@@ -77,7 +77,9 @@ export function ControlView(): React.JSX.Element {
           }
         })
         .catch((applyError) => {
-          setError(applyError instanceof Error ? applyError.message : 'Failed to apply VAD settings.')
+          setError(
+            applyError instanceof Error ? applyError.message : 'Failed to apply VAD settings.'
+          )
         })
     }, 300)
 
@@ -155,8 +157,10 @@ export function ControlView(): React.JSX.Element {
 
   const effectiveRemoteRms = captureDiagnostics?.remoteRms ?? workerDiagnostics?.remoteRms ?? 0
   const effectiveSelfRms = captureDiagnostics?.selfRms ?? workerDiagnostics?.selfRms ?? 0
-  const effectiveDroppedRemote = workerDiagnostics?.droppedRemote ?? captureDiagnostics?.droppedRemote ?? 0
-  const effectiveDroppedSelf = workerDiagnostics?.droppedSelf ?? captureDiagnostics?.droppedSelf ?? 0
+  const effectiveDroppedRemote =
+    workerDiagnostics?.droppedRemote ?? captureDiagnostics?.droppedRemote ?? 0
+  const effectiveDroppedSelf =
+    workerDiagnostics?.droppedSelf ?? captureDiagnostics?.droppedSelf ?? 0
 
   const formatMetric = (value: number | null): string => {
     if (value === null || Number.isNaN(value)) return 'n/a'
@@ -178,7 +182,9 @@ export function ControlView(): React.JSX.Element {
       const result = await window.api.listHistorySessions()
       setHistoryList(result)
     } catch (historyError) {
-      setError(historyError instanceof Error ? historyError.message : 'Failed to load history sessions.')
+      setError(
+        historyError instanceof Error ? historyError.message : 'Failed to load history sessions.'
+      )
     } finally {
       setHistoryBusy(false)
     }
@@ -198,7 +204,9 @@ export function ControlView(): React.JSX.Element {
       await refreshHistory()
     } catch (exportError) {
       setHistoryMessage(null)
-      setError(exportError instanceof Error ? exportError.message : 'Failed to export session history.')
+      setError(
+        exportError instanceof Error ? exportError.message : 'Failed to export session history.'
+      )
     } finally {
       setExportBusy(null)
     }
@@ -319,7 +327,9 @@ export function ControlView(): React.JSX.Element {
       patchSettings({ overlayOpacity: value })
       await window.api.setOverlay({ opacity: value })
     } catch (overlayError) {
-      setError(overlayError instanceof Error ? overlayError.message : 'Failed to update overlay opacity.')
+      setError(
+        overlayError instanceof Error ? overlayError.message : 'Failed to update overlay opacity.'
+      )
     }
   }
 
@@ -328,7 +338,11 @@ export function ControlView(): React.JSX.Element {
       patchSettings({ overlayVisible: visible })
       await window.api.setOverlay({ visible })
     } catch (overlayError) {
-      setError(overlayError instanceof Error ? overlayError.message : 'Failed to toggle overlay visibility.')
+      setError(
+        overlayError instanceof Error
+          ? overlayError.message
+          : 'Failed to toggle overlay visibility.'
+      )
     }
   }
 
@@ -337,7 +351,11 @@ export function ControlView(): React.JSX.Element {
       patchSettings({ overlayClickThrough: clickThrough })
       await window.api.setOverlay({ clickThrough })
     } catch (overlayError) {
-      setError(overlayError instanceof Error ? overlayError.message : 'Failed to toggle overlay click-through.')
+      setError(
+        overlayError instanceof Error
+          ? overlayError.message
+          : 'Failed to toggle overlay click-through.'
+      )
     }
   }
 
@@ -454,7 +472,9 @@ export function ControlView(): React.JSX.Element {
             <label style={{ width: 120 }}>Apply Mode</label>
             <select
               value={settings.vadApplyMode}
-              onChange={(e) => patchSettings({ vadApplyMode: e.target.value === 'restart' ? 'restart' : 'live' })}
+              onChange={(e) =>
+                patchSettings({ vadApplyMode: e.target.value === 'restart' ? 'restart' : 'live' })
+              }
             >
               <option value="live">Live apply</option>
               <option value="restart">Apply on restart</option>
@@ -524,7 +544,9 @@ export function ControlView(): React.JSX.Element {
           <div className="row">
             <label style={{ width: 120 }}>Active Source</label>
             <div className="subtitle" style={{ flex: 1 }}>
-              {captureDiagnostics?.activeSourceName || sourceLabelById.get(selectedSystemSourceId) || 'N/A'}
+              {captureDiagnostics?.activeSourceName ||
+                sourceLabelById.get(selectedSystemSourceId) ||
+                'N/A'}
             </div>
           </div>
 
@@ -551,7 +573,9 @@ export function ControlView(): React.JSX.Element {
             <label style={{ width: 120 }}>Reconnect</label>
             <div className="subtitle" style={{ flex: 1 }}>
               {captureDiagnostics?.reconnectState || 'stable'}
-              {captureDiagnostics?.reconnectAttempt ? ` (attempt ${captureDiagnostics.reconnectAttempt})` : ''}
+              {captureDiagnostics?.reconnectAttempt
+                ? ` (attempt ${captureDiagnostics.reconnectAttempt})`
+                : ''}
             </div>
           </div>
 
@@ -626,8 +650,8 @@ export function ControlView(): React.JSX.Element {
                 type="checkbox"
                 checked={settings.historyOptIn}
                 onChange={(e) => patchSettings({ historyOptIn: e.target.checked })}
-              />
-              {' '}History Opt-In
+              />{' '}
+              History Opt-In
             </label>
             <div className="subtitle" style={{ flex: 1 }}>
               {historyEncryptionAvailable
@@ -666,14 +690,20 @@ export function ControlView(): React.JSX.Element {
               <div className="item" key={item.id}>
                 <div className="subtitle">
                   {formatDateTime(item.startedAtMs)} | duration:{' '}
-                  {formatDuration(item.startedAtMs, item.endedAtMs)} | transcripts: {item.transcriptCount} | assists:{' '}
-                  {item.assistCount}
+                  {formatDuration(item.startedAtMs, item.endedAtMs)} | transcripts:{' '}
+                  {item.transcriptCount} | assists: {item.assistCount}
                 </div>
                 <div className="row" style={{ marginTop: 8 }}>
-                  <button onClick={() => exportSessionHistory('json', item.id)} disabled={exportBusy !== null}>
+                  <button
+                    onClick={() => exportSessionHistory('json', item.id)}
+                    disabled={exportBusy !== null}
+                  >
                     JSON
                   </button>
-                  <button onClick={() => exportSessionHistory('markdown', item.id)} disabled={exportBusy !== null}>
+                  <button
+                    onClick={() => exportSessionHistory('markdown', item.id)}
+                    disabled={exportBusy !== null}
+                  >
                     Markdown
                   </button>
                 </div>
@@ -720,7 +750,10 @@ export function ControlView(): React.JSX.Element {
           </div>
           <div className="row">
             <label style={{ width: 120 }}>Speaker</label>
-            <select value={speakerFilter} onChange={(e) => setSpeakerFilter(e.target.value as 'all' | 'remote' | 'self')}>
+            <select
+              value={speakerFilter}
+              onChange={(e) => setSpeakerFilter(e.target.value as 'all' | 'remote' | 'self')}
+            >
               <option value="all">All</option>
               <option value="remote">Remote</option>
               <option value="self">Self</option>
@@ -774,7 +807,9 @@ export function ControlView(): React.JSX.Element {
                     <div>
                       <strong>Reply TR:</strong> {item.replyTr}
                     </div>
-                    <div className="subtitle">confidence: {Math.round((item.confidence || 0) * 100)}%</div>
+                    <div className="subtitle">
+                      confidence: {Math.round((item.confidence || 0) * 100)}%
+                    </div>
                   </>
                 )}
                 {item.state === 'error' && <div className="error">{item.error}</div>}

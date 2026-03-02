@@ -368,7 +368,10 @@ export class MeetingAudioCapture {
         this.setReconnectState('retrying', i + 1)
         await this.wait(this.reconnectBackoffMs[i])
 
-        const recovered = await this.trySwitchRemoteSource(this.systemSourceId, this.systemSourceName)
+        const recovered = await this.trySwitchRemoteSource(
+          this.systemSourceId,
+          this.systemSourceName
+        )
         if (recovered) {
           this.setReconnectState('stable', 0)
           return
@@ -392,7 +395,9 @@ export class MeetingAudioCapture {
 
       this.setReconnectState('failed', this.reconnectBackoffMs.length)
       this.onFatalError?.(
-        new Error('System audio source reconnect failed. Select another source and restart the session.')
+        new Error(
+          'System audio source reconnect failed. Select another source and restart the session.'
+        )
       )
     } finally {
       this.reconnecting = false

@@ -1,0 +1,9 @@
+node_modules
+out
+dist
+artifacts
+*.ico
+*.exe
+*.blockmap
+*.zip
+package-lock.json
