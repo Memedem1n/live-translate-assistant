@@ -1,0 +1,10 @@
+﻿appId: com.livetranslate.assistant
+productName: LiveTranslate Assistant
+files:
+  - out/**
+  - package.json
+directories:
+  output: dist
+win:
+  target:
+    - nsis

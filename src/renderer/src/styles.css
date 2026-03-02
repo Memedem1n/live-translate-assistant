@@ -1,0 +1,196 @@
+﻿@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&display=swap');
+
+:root {
+  --bg: #06131e;
+  --bg-soft: #0a1d2b;
+  --glass: rgba(13, 29, 43, 0.55);
+  --glass-border: rgba(119, 198, 255, 0.2);
+  --text: #e9f5ff;
+  --muted: #9bb2c4;
+  --accent: #34d2c7;
+  --danger: #f87171;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: 'Manrope', 'Segoe UI', sans-serif;
+  background: radial-gradient(1200px 800px at 10% -20%, #1a4764 0%, transparent 55%),
+    radial-gradient(1000px 700px at 100% 0%, #19493d 0%, transparent 60%), var(--bg);
+  color: var(--text);
+}
+
+.app-shell {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  padding: 14px;
+  gap: 12px;
+}
+
+.glass {
+  background: var(--glass);
+  border: 1px solid var(--glass-border);
+  backdrop-filter: blur(14px);
+  border-radius: 16px;
+}
+
+.header-card {
+  padding: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.title {
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.subtitle {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr;
+  gap: 12px;
+  min-height: 0;
+  flex: 1;
+}
+
+.card {
+  padding: 12px;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.card h3 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+button,
+input,
+select,
+textarea {
+  font-family: inherit;
+  border: 1px solid rgba(152, 197, 230, 0.28);
+  background: rgba(10, 26, 40, 0.72);
+  color: var(--text);
+  border-radius: 10px;
+  padding: 8px 10px;
+}
+
+button {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+button.primary {
+  border-color: rgba(80, 245, 216, 0.4);
+  background: rgba(37, 196, 180, 0.2);
+}
+
+button.danger {
+  border-color: rgba(248, 113, 113, 0.4);
+  background: rgba(248, 113, 113, 0.2);
+}
+
+.list {
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+}
+
+.item {
+  border: 1px solid rgba(153, 193, 225, 0.2);
+  border-radius: 10px;
+  padding: 10px;
+  background: rgba(12, 29, 44, 0.52);
+}
+
+.badge {
+  display: inline-flex;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.badge.remote {
+  background: rgba(52, 210, 199, 0.2);
+  color: #93fff7;
+}
+
+.badge.self {
+  background: rgba(255, 213, 128, 0.2);
+  color: #ffd48f;
+}
+
+.error {
+  color: #ffc6c6;
+  font-size: 12px;
+}
+
+.overlay-root {
+  height: 100%;
+  display: flex;
+  align-items: stretch;
+  padding: 10px;
+}
+
+.overlay-card {
+  width: 100%;
+  border-radius: 20px;
+  background: rgba(4, 17, 25, 0.5);
+  border: 1px solid rgba(120, 214, 255, 0.3);
+  backdrop-filter: blur(18px);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.overlay-label {
+  font-size: 11px;
+  color: #a3e7ff;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.overlay-text {
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+@media (max-width: 900px) {
+  .grid {
+    grid-template-columns: 1fr;
+  }
+}
