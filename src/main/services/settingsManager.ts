@@ -1,9 +1,22 @@
 ﻿import { app, safeStorage } from 'electron'
 import fs from 'fs'
 import path from 'path'
-import { AppSettings } from '../../shared/contracts'
+import { AppSettings, VadConfig } from '../../shared/contracts'
 
 const SETTINGS_FILE = 'settings.json'
+
+const DEFAULT_VAD: VadConfig = {
+  remote: {
+    minAudioMs: 450,
+    silenceMs: 320,
+    voiceRmsThreshold: 380
+  },
+  self: {
+    minAudioMs: 450,
+    silenceMs: 320,
+    voiceRmsThreshold: 380
+  }
+}
 
 const DEFAULT_SETTINGS: AppSettings = {
   sttModel: 'small.en',
@@ -17,7 +30,12 @@ const DEFAULT_SETTINGS: AppSettings = {
     toggleOverlay: 'CommandOrControl+Shift+O',
     muteSuggestions: 'CommandOrControl+Shift+M',
     panicHide: 'CommandOrControl+Shift+H'
-  }
+  },
+  vad: {
+    remote: { ...DEFAULT_VAD.remote },
+    self: { ...DEFAULT_VAD.self }
+  },
+  vadApplyMode: 'live'
 }
 
 type SerializedSettings = Omit<AppSettings, 'answerModel' | 'ollamaBaseUrl'> & {
@@ -25,6 +43,19 @@ type SerializedSettings = Omit<AppSettings, 'answerModel' | 'ollamaBaseUrl'> & {
   ollamaBaseUrlEncrypted?: string
   answerModel?: string
   ollamaBaseUrl?: string
+}
+
+function clampVad(config: VadConfig): VadConfig {
+  const clampChannel = (channel: VadConfig['remote']) => ({
+    minAudioMs: Math.max(120, Math.min(3000, Math.round(channel.minAudioMs))),
+    silenceMs: Math.max(80, Math.min(2500, Math.round(channel.silenceMs))),
+    voiceRmsThreshold: Math.max(50, Math.min(3000, channel.voiceRmsThreshold))
+  })
+
+  return {
+    remote: clampChannel(config.remote),
+    self: clampChannel(config.self)
+  }
 }
 
 export class SettingsManager {
@@ -38,7 +69,14 @@ export class SettingsManager {
   }
 
   get(): AppSettings {
-    return { ...this.settings, hotkeys: { ...this.settings.hotkeys } }
+    return {
+      ...this.settings,
+      hotkeys: { ...this.settings.hotkeys },
+      vad: {
+        remote: { ...this.settings.vad.remote },
+        self: { ...this.settings.vad.self }
+      }
+    }
   }
 
   update(updates: Partial<AppSettings>): AppSettings {
@@ -48,17 +86,38 @@ export class SettingsManager {
       hotkeys: {
         ...this.settings.hotkeys,
         ...(updates.hotkeys || {})
-      }
+      },
+      vad: updates.vad
+        ? {
+            remote: {
+              ...this.settings.vad.remote,
+              ...updates.vad.remote
+            },
+            self: {
+              ...this.settings.vad.self,
+              ...updates.vad.self
+            }
+          }
+        : this.settings.vad
     }
 
     this.settings.overlayOpacity = Math.min(1, Math.max(0.25, this.settings.overlayOpacity))
+    this.settings.vad = clampVad(this.settings.vad)
+    this.settings.vadApplyMode = this.settings.vadApplyMode === 'restart' ? 'restart' : 'live'
     this.save()
     return this.get()
   }
 
   private load(): AppSettings {
     if (!fs.existsSync(this.settingsPath)) {
-      return { ...DEFAULT_SETTINGS, hotkeys: { ...DEFAULT_SETTINGS.hotkeys } }
+      return {
+        ...DEFAULT_SETTINGS,
+        hotkeys: { ...DEFAULT_SETTINGS.hotkeys },
+        vad: {
+          remote: { ...DEFAULT_SETTINGS.vad.remote },
+          self: { ...DEFAULT_SETTINGS.vad.self }
+        }
+      }
     }
 
     try {
@@ -67,15 +126,22 @@ export class SettingsManager {
 
       if (safeStorage.isEncryptionAvailable()) {
         if (parsed.answerModelEncrypted) {
-          parsed.answerModel = safeStorage.decryptString(
-            Buffer.from(parsed.answerModelEncrypted, 'base64')
-          )
+          parsed.answerModel = safeStorage.decryptString(Buffer.from(parsed.answerModelEncrypted, 'base64'))
         }
 
         if (parsed.ollamaBaseUrlEncrypted) {
-          parsed.ollamaBaseUrl = safeStorage.decryptString(
-            Buffer.from(parsed.ollamaBaseUrlEncrypted, 'base64')
-          )
+          parsed.ollamaBaseUrl = safeStorage.decryptString(Buffer.from(parsed.ollamaBaseUrlEncrypted, 'base64'))
+        }
+      }
+
+      const mergedVad = {
+        remote: {
+          ...DEFAULT_SETTINGS.vad.remote,
+          ...(parsed.vad?.remote || {})
+        },
+        self: {
+          ...DEFAULT_SETTINGS.vad.self,
+          ...(parsed.vad?.self || {})
         }
       }
 
@@ -85,26 +151,35 @@ export class SettingsManager {
         hotkeys: {
           ...DEFAULT_SETTINGS.hotkeys,
           ...(parsed.hotkeys || {})
-        }
+        },
+        vad: clampVad(mergedVad),
+        vadApplyMode: parsed.vadApplyMode === 'restart' ? 'restart' : 'live'
       }
     } catch {
-      return { ...DEFAULT_SETTINGS, hotkeys: { ...DEFAULT_SETTINGS.hotkeys } }
+      return {
+        ...DEFAULT_SETTINGS,
+        hotkeys: { ...DEFAULT_SETTINGS.hotkeys },
+        vad: {
+          remote: { ...DEFAULT_SETTINGS.vad.remote },
+          self: { ...DEFAULT_SETTINGS.vad.self }
+        }
+      }
     }
   }
 
   private save(): void {
     const payload: SerializedSettings = {
       ...this.settings,
-      hotkeys: { ...this.settings.hotkeys }
+      hotkeys: { ...this.settings.hotkeys },
+      vad: {
+        remote: { ...this.settings.vad.remote },
+        self: { ...this.settings.vad.self }
+      }
     }
 
     if (safeStorage.isEncryptionAvailable()) {
-      payload.answerModelEncrypted = safeStorage
-        .encryptString(this.settings.answerModel)
-        .toString('base64')
-      payload.ollamaBaseUrlEncrypted = safeStorage
-        .encryptString(this.settings.ollamaBaseUrl)
-        .toString('base64')
+      payload.answerModelEncrypted = safeStorage.encryptString(this.settings.answerModel).toString('base64')
+      payload.ollamaBaseUrlEncrypted = safeStorage.encryptString(this.settings.ollamaBaseUrl).toString('base64')
       delete payload.answerModel
       delete payload.ollamaBaseUrl
     }

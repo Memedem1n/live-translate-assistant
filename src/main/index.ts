@@ -1,10 +1,26 @@
-﻿import { app, BrowserWindow, globalShortcut, session } from 'electron'
+import { app, BrowserWindow, globalShortcut, session } from 'electron'
 import { electronApp, is, optimizer } from '@electron-toolkit/utils'
 import { join } from 'node:path'
-import { cleanupIpcHandlers, initializeIpcHandlers } from './ipc/handlers'
+import {
+  cleanupIpcHandlers,
+  initializeIpcHandlers,
+  panicHideOverlayFromShortcut,
+  toggleOverlayFromShortcut,
+  toggleSuggestionsMuteFromShortcut
+} from './ipc/handlers'
 
 let controlWindow: BrowserWindow | null = null
 let overlayWindow: BrowserWindow | null = null
+
+function hardenWindow(window: BrowserWindow): void {
+  window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+  window.webContents.on('will-navigate', (event, url) => {
+    const isAllowed = is.dev ? url.startsWith('http://localhost:') : url.startsWith('file://')
+    if (!isAllowed) {
+      event.preventDefault()
+    }
+  })
+}
 
 function createControlWindow(): BrowserWindow {
   const window = new BrowserWindow({
@@ -18,12 +34,17 @@ function createControlWindow(): BrowserWindow {
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
-      sandbox: false,
-      nodeIntegration: false
+      sandbox: !is.dev,
+      nodeIntegration: false,
+      devTools: is.dev,
+      webSecurity: true,
+      allowRunningInsecureContent: false,
+      webviewTag: false
     }
   })
 
   window.on('ready-to-show', () => window.show())
+  hardenWindow(window)
 
   if (is.dev && process.env.ELECTRON_RENDERER_URL) {
     window.loadURL(`${process.env.ELECTRON_RENDERER_URL}?view=control`)
@@ -52,11 +73,16 @@ function createOverlayWindow(): BrowserWindow {
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
-      sandbox: false,
-      nodeIntegration: false
+      sandbox: !is.dev,
+      nodeIntegration: false,
+      devTools: is.dev,
+      webSecurity: true,
+      allowRunningInsecureContent: false,
+      webviewTag: false
     }
   })
 
+  hardenWindow(window)
   window.setContentProtection(true)
 
   if (is.dev && process.env.ELECTRON_RENDERER_URL) {
@@ -74,21 +100,15 @@ function registerShortcuts(): void {
   globalShortcut.unregisterAll()
 
   globalShortcut.register('CommandOrControl+Shift+O', () => {
-    if (!overlayWindow || overlayWindow.isDestroyed()) return
-    if (overlayWindow.isVisible()) {
-      overlayWindow.hide()
-    } else {
-      overlayWindow.showInactive()
-    }
+    toggleOverlayFromShortcut()
   })
 
   globalShortcut.register('CommandOrControl+Shift+M', () => {
-    controlWindow?.webContents.send('shortcut:request-mute-toggle')
-    overlayWindow?.webContents.send('shortcut:request-mute-toggle')
+    toggleSuggestionsMuteFromShortcut()
   })
 
   globalShortcut.register('CommandOrControl+Shift+H', () => {
-    overlayWindow?.hide()
+    panicHideOverlayFromShortcut()
   })
 }
 

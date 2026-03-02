@@ -1,4 +1,4 @@
-﻿import React from 'react'
+import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { App } from './App'
 import { useAppStore } from './store/useAppStore'
@@ -10,9 +10,14 @@ async function bootstrap(): Promise<void> {
   useAppStore.getState().setView(view)
 
   try {
-    const [settings, sources] = await Promise.all([window.api.getSettings(), window.api.getAudioSources()])
+    const [settings, sources, history] = await Promise.all([
+      window.api.getSettings(),
+      window.api.getAudioSources(),
+      window.api.listHistorySessions()
+    ])
     useAppStore.getState().setSettings(settings)
     useAppStore.getState().setAudioSources(sources)
+    useAppStore.getState().setHistoryList(history)
   } catch (error) {
     useAppStore
       .getState()
@@ -21,9 +26,15 @@ async function bootstrap(): Promise<void> {
 
   window.api.onTranscriptFinal((event) => useAppStore.getState().addTranscript(event))
   window.api.onAssistUpdate((event) => useAppStore.getState().upsertAssist(event))
-  window.api.onSessionState((state) => useAppStore.getState().setSessionState(state))
-  window.api.onShortcutMuteToggle((muted) =>
-    useAppStore.getState().setSessionState({ ...useAppStore.getState().session, muted })
+  window.api.onSessionState((session) => useAppStore.getState().setSessionState(session))
+  window.api.onDiagnosticsUpdate((event) => useAppStore.getState().setWorkerDiagnostics(event))
+  window.api.onLatencyMetrics((event) => useAppStore.getState().setLatencyMetrics(event))
+  window.api.onOverlayState((overlay) =>
+    useAppStore.getState().patchSettings({
+      overlayVisible: overlay.visible,
+      overlayOpacity: overlay.opacity,
+      overlayClickThrough: overlay.clickThrough
+    })
   )
 
   ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(

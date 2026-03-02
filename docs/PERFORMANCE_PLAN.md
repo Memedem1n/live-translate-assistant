@@ -29,6 +29,11 @@
 4. Manually score translation/reply on a 1-5 rubric.
 5. Convert rubric to percentage; pass threshold >= 80%.
 
+## Runner
+- Benchmark command: `npm run benchmark`
+- Clip manifest: `benchmark/clips/manifest.json`
+- Report output: `benchmark/reports/benchmark_*.json`
+
 ## Immediate Tuning Knobs
 - STT model (`small.en` vs `medium.en`)
 - Worker silence window (`SILENCE_MS`)

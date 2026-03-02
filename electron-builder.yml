@@ -1,10 +1,37 @@
-﻿appId: com.livetranslate.assistant
+appId: com.livetranslate.assistant
 productName: LiveTranslate Assistant
+artifactName: ${productName}-${version}-${os}-${arch}.${ext}
+compression: maximum
+asar: true
 files:
   - out/**
   - package.json
+  - '!**/*.map'
+  - '!**/*.md'
+extraResources:
+  - from: scripts
+    to: scripts
+    filter:
+      - stt_worker.py
 directories:
   output: dist
 win:
+  executableName: LiveTranslateAssistant
+  verifyUpdateCodeSignature: false
+  requestedExecutionLevel: asInvoker
+  icon: build/icon.ico
   target:
-    - nsis
+    - target: nsis
+      arch:
+        - x64
+nsis:
+  installerIcon: build/icon.ico
+  uninstallerIcon: build/icon.ico
+  oneClick: false
+  perMachine: false
+  allowElevation: true
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: always
+  createStartMenuShortcut: true
+  shortcutName: LiveTranslate Assistant
+  deleteAppDataOnUninstall: false

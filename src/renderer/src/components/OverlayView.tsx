@@ -1,4 +1,4 @@
-﻿import { useMemo } from 'react'
+import { useMemo } from 'react'
 import { useAppStore } from '../store/useAppStore'
 
 export function OverlayView(): React.JSX.Element {
@@ -22,7 +22,7 @@ export function OverlayView(): React.JSX.Element {
     <div className="overlay-root">
       <div className="overlay-card">
         <div className="overlay-label">
-          Live Overlay {session.muted ? '(muted)' : ''} {session.active ? '| active' : '| idle'}
+          Live Overlay {session.muted ? '(muted)' : ''} | {session.phase}
         </div>
 
         <div>

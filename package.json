@@ -1,4 +1,4 @@
-﻿{
+{
   "name": "live-translate-assistant",
   "version": "0.1.0",
   "private": true,
@@ -11,8 +11,12 @@
     "typecheck": "npm run typecheck:node && npm run typecheck:web",
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json --composite false",
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json --composite false",
+    "asset:icon": "powershell -ExecutionPolicy Bypass -File scripts/generate_icon.ps1 -OutputPath build/icon.ico",
+    "codesign:check": "powershell -ExecutionPolicy Bypass -File scripts/check_codesign_readiness.ps1",
     "build": "npm run typecheck && electron-vite build",
-    "build:win": "npm run build && electron-builder --win",
+    "build:win": "npm run asset:icon && npm run build && electron-builder --win --x64 --publish never",
+    "build:win:dir": "npm run asset:icon && npm run build && electron-builder --win --x64 --dir --publish never",
+    "benchmark": "python scripts/benchmark_runner.py --clips-manifest benchmark/clips/manifest.json --runs 3",
     "lint": "echo \"lint rules will be added in M2\"",
     "format": "echo \"format command will be added in M2\""
   },

@@ -6,6 +6,7 @@ Uygulama varsayilan olarak local-first calisir. Ses, transkript ve cevap uretimi
 ## Kayit Politikasi
 - Varsayilan: gecmis kalici olarak saklanmaz.
 - Opt-in acildiginda: gecmis yerel olarak saklanir.
+- Uygun oldugunda: gecmis kayitlari `safeStorage` ile sifrelenerek diske yazilir.
 - Hassas ayarlar (uygun oldugunda): `safeStorage` ile sifrelenir.
 
 ## Ag Erisimi

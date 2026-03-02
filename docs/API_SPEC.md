@@ -1,4 +1,4 @@
-﻿# IPC/API Spec (V1)
+# IPC/API Spec (V1.4)
 
 ## IPC Invokes
 
@@ -12,12 +12,31 @@ Output: `AppSettings`
 ### `audio:sources`
 Output: `Array<{id: string; name: string}>`
 
+### `history:list`
+Output:
+- `encryptionAvailable: boolean`
+- `sessions: Array<{ id, startedAtMs, endedAtMs, persistedAtMs, transcriptCount, assistCount }>`
+
+### `history:export`
+Input:
+- `format: "json" | "markdown"`
+- `sessionId?`: string (optional; when omitted, exports active or last session snapshot)
+Output:
+- `success: boolean`
+- `format: "json" | "markdown"`
+- `path: string`
+- `sessionId: string`
+
 ### `session:start`
-Input: `{ mode: "meeting"; sttModel?: string }`
+Input: `{ mode: "meeting"; sttModel?: string; vad?: VadConfig }`
 Output: `{ success: boolean }`
 
 ### `session:stop`
 Output: `{ success: boolean }`
+
+### `session:update-vad`
+Input: `{ vad: VadConfig; applyMode?: "live" | "restart" }`
+Output: `{ success: boolean; applied: boolean; requiresRestart: boolean }`
 
 ### `transcript:inject`
 Input: `{ speaker: "remote" | "self"; textEn: string }`
@@ -48,6 +67,7 @@ Payload:
 - `isFinal`
 - `tStartMs`
 - `tEndMs`
+- `emittedMs`
 - `confidence`
 
 ### `assist:update`
@@ -61,15 +81,41 @@ Payload:
 - `replyTr?`
 - `confidence?`
 - `latencyMs`
+- `firstTokenMs?`
+- `fallbackUsed?`
+- `parseMode?`: `primary | fallback`
 - `error?`
 
 ### `session:state`
 Payload:
 - `active: boolean`
 - `muted: boolean`
+- `phase: "idle" | "starting" | "running" | "degraded" | "stopping" | "error"`
+- `workerReady: boolean`
+- `reason?: string`
+- `lastError?: string`
 
-### `shortcut:request-mute-toggle`
-No payload. Renderer should invoke `assistant:toggle-mute`.
+### `overlay:state`
+Payload:
+- `visible: boolean`
+- `opacity: number`
+- `clickThrough: boolean`
+
+### `diagnostics:update`
+Payload:
+- `tsMs: number`
+- `remoteRms: number`
+- `selfRms: number`
+- `droppedRemote: number`
+- `droppedSelf: number`
+
+### `metrics:latency`
+Payload:
+- `sttFirstChunkMs`: `{ latest, p50, p95, count }`
+- `assistFirstTokenMs`: `{ latest, p50, p95, count }`
+- `assistFinalMs`: `{ latest, p50, p95, count }`
+- `workerErrorRate: number`
+- `updatedAtMs: number`
 
 ### `shortcut:mute-toggle`
 Payload: `boolean` muted state.

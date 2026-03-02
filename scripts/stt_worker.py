@@ -3,13 +3,16 @@
 NDJSON-driven local STT worker for LiveTranslate Assistant.
 
 Commands:
-- {"type":"start_session","model":"small.en"}
+- {"type":"start_session","model":"small.en","vad":{...}}
+- {"type":"update_vad","vad":{...}}
 - {"type":"audio_chunk","speaker":"remote|self","pcm_base64":"...","sample_rate":16000}
 - {"type":"inject_transcript","speaker":"remote|self","text":"..."}
 - {"type":"stop_session"}
 
 Events:
+- {"type":"ready","model":"small.en"}
 - {"type":"transcript","speaker":"remote|self","text":"...","confidence":0.0}
+- {"type":"diagnostics","ts_ms":...,"remote_rms":...,"self_rms":...,"dropped_remote":...,"dropped_self":...}
 - {"type":"error","message":"..."}
 """
 
@@ -31,6 +34,7 @@ SILENCE_MS = 320
 VOICE_RMS_THRESHOLD = 380.0
 CHECK_INTERVAL_SEC = 0.08
 DEFAULT_SAMPLE_RATE = 16000
+DIAGNOSTIC_INTERVAL_MS = 250
 
 worker_lock = threading.Lock()
 
@@ -40,7 +44,25 @@ active = False
 
 buffers: Dict[str, bytearray] = defaultdict(bytearray)
 last_voice_ts: Dict[str, float] = {"remote": 0.0, "self": 0.0}
+speech_start_ts: Dict[str, float] = {"remote": 0.0, "self": 0.0}
 sample_rates: Dict[str, int] = {"remote": DEFAULT_SAMPLE_RATE, "self": DEFAULT_SAMPLE_RATE}
+
+vad_config: Dict[str, Dict[str, float]] = {
+    "remote": {
+        "min_audio_ms": float(MIN_AUDIO_MS),
+        "silence_ms": float(SILENCE_MS),
+        "voice_rms_threshold": float(VOICE_RMS_THRESHOLD),
+    },
+    "self": {
+        "min_audio_ms": float(MIN_AUDIO_MS),
+        "silence_ms": float(SILENCE_MS),
+        "voice_rms_threshold": float(VOICE_RMS_THRESHOLD),
+    },
+}
+
+last_levels: Dict[str, float] = {"remote": 0.0, "self": 0.0}
+dropped_chunks: Dict[str, int] = {"remote": 0, "self": 0}
+last_diag_emit_ms = 0.0
 
 
 # ---------- Helpers ----------
@@ -102,7 +124,70 @@ def ensure_model(target_model: str):
     raise RuntimeError("Unable to load Whisper model. " + " | ".join(errors))
 
 
-def transcribe_chunk(speaker: str, pcm_bytes: bytes, sample_rate: int) -> None:
+def parse_channel_vad(value: dict, fallback: Dict[str, float]) -> Dict[str, float]:
+    if not isinstance(value, dict):
+        return {
+            "min_audio_ms": fallback["min_audio_ms"],
+            "silence_ms": fallback["silence_ms"],
+            "voice_rms_threshold": fallback["voice_rms_threshold"],
+        }
+
+    def num(key: str, default: float, low: float, high: float) -> float:
+        raw = value.get(key, default)
+        try:
+            val = float(raw)
+        except (TypeError, ValueError):
+            val = default
+        return max(low, min(high, val))
+
+    return {
+        "min_audio_ms": num("minAudioMs", fallback["min_audio_ms"], 120.0, 3000.0),
+        "silence_ms": num("silenceMs", fallback["silence_ms"], 80.0, 2500.0),
+        "voice_rms_threshold": num(
+            "voiceRmsThreshold", fallback["voice_rms_threshold"], 50.0, 3000.0
+        ),
+    }
+
+
+def apply_vad_config(vad_payload: Optional[dict]) -> None:
+    global vad_config
+
+    if not isinstance(vad_payload, dict):
+        return
+
+    remote = parse_channel_vad(vad_payload.get("remote"), vad_config["remote"])
+    self_cfg = parse_channel_vad(vad_payload.get("self"), vad_config["self"])
+
+    vad_config = {
+        "remote": remote,
+        "self": self_cfg,
+    }
+
+
+def maybe_emit_diagnostics(now_ms: Optional[float] = None) -> None:
+    global last_diag_emit_ms
+
+    ts_ms = now_ms if now_ms is not None else time.time() * 1000
+    if ts_ms - last_diag_emit_ms < DIAGNOSTIC_INTERVAL_MS:
+        return
+
+    with worker_lock:
+        payload = {
+            "type": "diagnostics",
+            "ts_ms": int(ts_ms),
+            "remote_rms": round(last_levels.get("remote", 0.0), 2),
+            "self_rms": round(last_levels.get("self", 0.0), 2),
+            "dropped_remote": int(dropped_chunks.get("remote", 0)),
+            "dropped_self": int(dropped_chunks.get("self", 0)),
+        }
+
+    last_diag_emit_ms = ts_ms
+    emit(payload)
+
+
+def transcribe_chunk(
+    speaker: str, pcm_bytes: bytes, sample_rate: int, t_start_ms: float, t_end_ms: float
+) -> None:
     if model is None:
         return
 
@@ -130,12 +215,16 @@ def transcribe_chunk(speaker: str, pcm_bytes: bytes, sample_rate: int) -> None:
 
         text = " ".join(text_parts).strip()
         if text:
+            emitted_ms = time.time() * 1000
             emit(
                 {
                     "type": "transcript",
                     "speaker": speaker,
                     "text": text,
                     "confidence": 0.85,
+                    "t_start_ms": int(t_start_ms),
+                    "t_end_ms": int(t_end_ms),
+                    "emitted_ms": int(emitted_ms),
                 }
             )
     except Exception as exc:
@@ -165,22 +254,27 @@ def monitor_loop() -> None:
         with worker_lock:
             for speaker in ("remote", "self"):
                 rate = sample_rates.get(speaker, DEFAULT_SAMPLE_RATE)
-                min_bytes = int((MIN_AUDIO_MS / 1000.0) * rate * 2)
+                channel_vad = vad_config.get(speaker, vad_config["remote"])
+                min_bytes = int((channel_vad["min_audio_ms"] / 1000.0) * rate * 2)
                 buffer = buffers[speaker]
 
                 if len(buffer) < min_bytes:
                     continue
 
                 elapsed = now_ms - last_voice_ts.get(speaker, 0.0)
-                if elapsed < SILENCE_MS:
+                if elapsed < channel_vad["silence_ms"]:
                     continue
 
                 chunk = bytes(buffer)
                 buffers[speaker] = bytearray()
-                to_transcribe.append((speaker, chunk, rate))
+                t_start = speech_start_ts.get(speaker, now_ms)
+                speech_start_ts[speaker] = 0.0
+                to_transcribe.append((speaker, chunk, rate, t_start, now_ms))
 
-        for speaker, chunk, rate in to_transcribe:
-            transcribe_chunk(speaker, chunk, rate)
+        for speaker, chunk, rate, t_start, t_end in to_transcribe:
+            transcribe_chunk(speaker, chunk, rate, t_start, t_end)
+
+        maybe_emit_diagnostics(now_ms)
 
 
 # ---------- Command handling ----------
@@ -190,15 +284,27 @@ def handle_start_session(cmd: dict) -> None:
     target_model = str(cmd.get("model") or "small.en")
 
     ensure_model(target_model)
+    apply_vad_config(cmd.get("vad"))
 
     with worker_lock:
         buffers["remote"] = bytearray()
         buffers["self"] = bytearray()
+        dropped_chunks["remote"] = 0
+        dropped_chunks["self"] = 0
+        last_levels["remote"] = 0.0
+        last_levels["self"] = 0.0
         now_ms = time.time() * 1000
         last_voice_ts["remote"] = now_ms
         last_voice_ts["self"] = now_ms
+        speech_start_ts["remote"] = now_ms
+        speech_start_ts["self"] = now_ms
 
     active = True
+    emit({"type": "ready", "model": target_model})
+
+
+def handle_update_vad(cmd: dict) -> None:
+    apply_vad_config(cmd.get("vad"))
 
 
 def handle_audio_chunk(cmd: dict) -> None:
@@ -219,14 +325,22 @@ def handle_audio_chunk(cmd: dict) -> None:
         return
 
     sample_rate = int(cmd.get("sample_rate") or DEFAULT_SAMPLE_RATE)
-
     level = rms_int16le(pcm)
 
     with worker_lock:
         sample_rates[speaker] = sample_rate
-        if level >= VOICE_RMS_THRESHOLD:
+        last_levels[speaker] = level
+
+        threshold = vad_config.get(speaker, vad_config["remote"])["voice_rms_threshold"]
+        if level >= threshold:
+            if len(buffers[speaker]) == 0:
+                speech_start_ts[speaker] = time.time() * 1000
             buffers[speaker].extend(pcm)
             last_voice_ts[speaker] = time.time() * 1000
+        else:
+            dropped_chunks[speaker] = dropped_chunks.get(speaker, 0) + 1
+
+    maybe_emit_diagnostics()
 
 
 def handle_inject_transcript(cmd: dict) -> None:
@@ -238,7 +352,18 @@ def handle_inject_transcript(cmd: dict) -> None:
     if not text:
         return
 
-    emit({"type": "transcript", "speaker": speaker, "text": text, "confidence": 0.95})
+    now_ms = int(time.time() * 1000)
+    emit(
+        {
+            "type": "transcript",
+            "speaker": speaker,
+            "text": text,
+            "confidence": 0.95,
+            "t_start_ms": now_ms,
+            "t_end_ms": now_ms,
+            "emitted_ms": now_ms,
+        }
+    )
 
 
 def handle_stop_session() -> None:
@@ -248,6 +373,8 @@ def handle_stop_session() -> None:
     with worker_lock:
         buffers["remote"] = bytearray()
         buffers["self"] = bytearray()
+        speech_start_ts["remote"] = 0.0
+        speech_start_ts["self"] = 0.0
 
 
 # ---------- Main ----------
@@ -266,6 +393,8 @@ def main() -> None:
 
             if command_type == "start_session":
                 handle_start_session(cmd)
+            elif command_type == "update_vad":
+                handle_update_vad(cmd)
             elif command_type == "audio_chunk":
                 handle_audio_chunk(cmd)
             elif command_type == "inject_transcript":
