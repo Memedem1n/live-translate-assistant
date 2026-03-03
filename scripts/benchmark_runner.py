@@ -9,6 +9,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import ctypes.util
 import datetime as dt
 import json
 import os
@@ -26,6 +27,63 @@ PRIMARY_PROMPT = (
     '{"translation_tr":"...","reply_en":"...","reply_tr":"...","confidence":0.0}. '
     "Keep technical terms in English when needed. Replies must be concise and actionable."
 )
+
+
+def create_whisper_model(model_name: str, device: str, compute_type: str):
+    from faster_whisper import WhisperModel
+
+    normalized_device = device.lower().strip()
+    normalized_compute = compute_type.strip()
+    attempts: List[tuple[str, str]] = []
+
+    supports_cuda = has_cuda12_runtime()
+
+    if normalized_device == "auto":
+        attempts = [("cpu", "int8")]
+        if supports_cuda:
+            attempts = [("cuda", "int8_float16"), ("cpu", "int8")]
+    elif normalized_device == "cuda":
+        attempts = [("cpu", "int8")]
+        if supports_cuda:
+            attempts = [
+                ("cuda", normalized_compute if normalized_compute != "auto" else "int8_float16")
+            ]
+        if normalized_compute == "auto" and supports_cuda:
+            attempts.append(("cpu", "int8"))
+    else:
+        attempts = [("cpu", normalized_compute if normalized_compute != "auto" else "int8")]
+
+    errors: List[str] = []
+    for selected_device, selected_compute in attempts:
+        try:
+            model = WhisperModel(model_name, device=selected_device, compute_type=selected_compute)
+            return model, selected_device, selected_compute
+        except Exception as exc:  # pragma: no cover
+            errors.append(f"{selected_device}/{selected_compute}: {exc}")
+
+    raise RuntimeError("Unable to load Whisper model. " + " | ".join(errors))
+
+
+def has_cuda12_runtime() -> bool:
+    if ctypes.util.find_library("cublas64_12"):
+        return True
+
+    dll_name = "cublas64_12.dll"
+    for raw_dir in os.environ.get("PATH", "").split(os.pathsep):
+        if not raw_dir:
+            continue
+        candidate = os.path.join(raw_dir, dll_name)
+        if os.path.exists(candidate):
+            return True
+
+    toolkit_root = r"C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA"
+    if os.path.isdir(toolkit_root):
+        for entry in os.listdir(toolkit_root):
+            candidate = os.path.join(toolkit_root, entry, "bin", dll_name)
+            if os.path.exists(candidate):
+                return True
+
+    return False
 
 
 def percentile(values: List[float], ratio: float) -> Optional[float]:
@@ -142,6 +200,17 @@ def main() -> int:
     parser.add_argument("--runs", type=int, default=3, help="Number of benchmark repetitions.")
     parser.add_argument("--stt-model", default="small.en", help="faster-whisper model name.")
     parser.add_argument(
+        "--stt-device",
+        default="auto",
+        choices=["auto", "cuda", "cpu"],
+        help="Whisper device selection strategy.",
+    )
+    parser.add_argument(
+        "--stt-compute-type",
+        default="auto",
+        help="Whisper compute type. Use 'auto' for profile defaults.",
+    )
+    parser.add_argument(
         "--assist-model",
         default="qwen2.5:7b-instruct-q4_K_M",
         help="Ollama model name for assist generation.",
@@ -169,7 +238,7 @@ def main() -> int:
         return 1
 
     try:
-        from faster_whisper import WhisperModel
+        from faster_whisper import WhisperModel  # noqa: F401
     except Exception as exc:
         print(
             "[benchmark] faster-whisper not available. Install with: pip install faster-whisper",
@@ -178,13 +247,25 @@ def main() -> int:
         print(f"[benchmark] Detail: {exc}", file=sys.stderr)
         return 1
 
-    print(f"[benchmark] Loading STT model: {args.stt_model}")
-    model = WhisperModel(args.stt_model, device="cpu", compute_type="int8")
+    print(
+        f"[benchmark] Loading STT model: {args.stt_model} (device={args.stt_device}, compute={args.stt_compute_type})"
+    )
+    try:
+        model, resolved_device, resolved_compute = create_whisper_model(
+            args.stt_model, args.stt_device, args.stt_compute_type
+        )
+    except Exception as exc:
+        print(f"[benchmark] Failed to load Whisper model: {exc}", file=sys.stderr)
+        return 1
+
+    print(f"[benchmark] Whisper runtime selected: {resolved_device}/{resolved_compute}")
 
     stt_ms_values: List[float] = []
     assist_first_token_ms_values: List[float] = []
     assist_final_ms_values: List[float] = []
     clip_results: List[Dict[str, Any]] = []
+    active_device = resolved_device
+    active_compute = resolved_compute
 
     for run_idx in range(args.runs):
         print(f"[benchmark] Run {run_idx + 1}/{args.runs}")
@@ -195,7 +276,36 @@ def main() -> int:
                 print(f"[benchmark] Skip missing clip: {clip_id} -> {clip_path}")
                 continue
 
-            stt_result = transcribe_clip(model, clip_path)
+            try:
+                stt_result = transcribe_clip(model, clip_path)
+            except Exception as exc:
+                message = str(exc).lower()
+                should_fallback_cpu = (
+                    active_device == "cuda"
+                    and ("cublas" in message or "cuda" in message)
+                    and args.stt_device in ("auto", "cuda")
+                )
+
+                if should_fallback_cpu:
+                    print(
+                        f"[benchmark] CUDA runtime error detected during transcription: {exc}"
+                    )
+                    print(
+                        "[benchmark] Falling back to CPU/int8..."
+                    )
+                    model, active_device, active_compute = create_whisper_model(
+                        args.stt_model, "cpu", "auto"
+                    )
+                    print(
+                        f"[benchmark] Whisper runtime switched to: {active_device}/{active_compute}"
+                    )
+                    stt_result = transcribe_clip(model, clip_path)
+                else:
+                    print(
+                        f"[benchmark] STT transcription failed for clip {clip_id}: {exc}",
+                        file=sys.stderr,
+                    )
+                    return 1
             stt_ms_values.append(stt_result["latency_ms"])
 
             context_lines = clip.get("context_lines") or []
@@ -245,6 +355,10 @@ def main() -> int:
         "stt_model": args.stt_model,
         "assist_model": args.assist_model,
         "ollama_base_url": args.ollama_base_url,
+        "resolved_runtime": {
+            "device": active_device,
+            "compute_type": active_compute,
+        },
         "summary": {
             "stt_first_chunk_ms": summary(stt_ms_values),
             "assist_first_token_ms": summary(assist_first_token_ms_values),

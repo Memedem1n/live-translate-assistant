@@ -12,6 +12,13 @@
 - First assist token: < 1s (p50)
 - Short assist ready (2-4 sentences): < 3s (p50)
 
+## Demo Gate (Anlik Mod)
+
+- `stt_first_chunk_ms` p50 <= 800ms
+- `assist_first_token_ms` p50 <= 900ms
+- `assist_final_ms` p50 <= 2500ms
+- Primary decision priority: keep first token under 1 second while preserving response quality.
+
 ## Quality Targets
 
 - Translation adequacy for technical content: >= 80%
@@ -39,6 +46,18 @@
 - Benchmark command: `npm run benchmark`
 - Clip manifest: `benchmark/clips/manifest.json`
 - Report output: `benchmark/reports/benchmark_*.json`
+
+## Agreed Sweep Matrix
+
+- STT sweep with fixed assist model:
+  - `small.en + qwen2.5:7b-instruct-q4_K_M`
+  - `medium.en + qwen2.5:7b-instruct-q4_K_M`
+  - `large-v3 + qwen2.5:7b-instruct-q4_K_M`
+- Assist sweep with fixed STT model:
+  - `small.en + qwen2.5:3b-instruct-q4_K_M`
+  - `small.en + qwen2.5:14b-instruct-q4_K_M`
+- Command:
+  - `npm run benchmark:sweep`
 
 ## Immediate Tuning Knobs
 

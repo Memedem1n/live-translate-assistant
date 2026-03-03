@@ -1,5 +1,6 @@
 import { app, BrowserWindow, desktopCapturer, ipcMain } from 'electron'
 import { randomUUID } from 'node:crypto'
+import { existsSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import {
   AppSettings,
@@ -80,6 +81,22 @@ function resolveWorkerPath(): string {
   return resolve(__dirname, '../../../scripts/stt_worker.py')
 }
 
+function resolvePythonBinary(): string {
+  const fromEnv = process.env.LIVETRANSLATE_PYTHON_BIN
+  if (fromEnv) {
+    return fromEnv
+  }
+
+  if (!app.isPackaged) {
+    const venvPython = resolve(__dirname, '../../../.venv311/Scripts/python.exe')
+    if (existsSync(venvPython)) {
+      return venvPython
+    }
+  }
+
+  return 'python'
+}
+
 function broadcast(channel: string, payload: unknown): void {
   if (!refs) return
 
@@ -150,6 +167,26 @@ function applyOverlaySettings(settings: OverlaySettings, options?: { persist?: b
   }
 
   applyOverlayState()
+}
+
+function setControlWindowVisible(visible: boolean): boolean {
+  if (!refs || refs.controlWindow.isDestroyed()) {
+    return false
+  }
+
+  if (visible) {
+    refs.controlWindow.setSkipTaskbar(false)
+    if (refs.controlWindow.isMinimized()) {
+      refs.controlWindow.restore()
+    }
+    refs.controlWindow.show()
+    refs.controlWindow.focus()
+    return true
+  }
+
+  refs.controlWindow.hide()
+  refs.controlWindow.setSkipTaskbar(true)
+  return false
 }
 
 function normalizeContext(history: TranscriptEvent[]): string[] {
@@ -360,6 +397,14 @@ export function panicHideOverlayFromShortcut(): void {
   applyOverlaySettings({ visible: false })
 }
 
+export function hideControlWindowFromMain(): void {
+  setControlWindowVisible(false)
+}
+
+export function showControlWindowFromMain(): void {
+  setControlWindowVisible(true)
+}
+
 function setupBridgeListeners(): void {
   if (!sttBridge) return
 
@@ -434,7 +479,8 @@ export function initializeIpcHandlers(windowRefs: WindowRefs): void {
   assistService = new AssistService()
   historyManager = new HistoryManager()
   sttBridge = new SttBridge({
-    workerPath: resolveWorkerPath()
+    workerPath: resolveWorkerPath(),
+    pythonBin: resolvePythonBinary()
   })
 
   setupBridgeListeners()
@@ -630,6 +676,21 @@ export function initializeIpcHandlers(windowRefs: WindowRefs): void {
     return { success: true }
   })
 
+  ipcMain.handle('control:hide', () => {
+    setControlWindowVisible(false)
+    return { success: true }
+  })
+
+  ipcMain.handle('control:show', () => {
+    setControlWindowVisible(true)
+    return { success: true }
+  })
+
+  ipcMain.handle('control:toggle', () => {
+    const visible = setControlWindowVisible(!refs?.controlWindow.isVisible())
+    return { success: true, visible }
+  })
+
   ipcMain.handle('assistant:toggle-mute', () => {
     toggleSuggestionsMuteFromShortcut()
     return { success: true, muted: suggestionsMuted }
@@ -704,5 +765,8 @@ export function cleanupIpcHandlers(): void {
   ipcMain.removeHandler('session:update-vad')
   ipcMain.removeHandler('transcript:inject')
   ipcMain.removeHandler('overlay:set')
+  ipcMain.removeHandler('control:hide')
+  ipcMain.removeHandler('control:show')
+  ipcMain.removeHandler('control:toggle')
   ipcMain.removeHandler('assistant:toggle-mute')
 }

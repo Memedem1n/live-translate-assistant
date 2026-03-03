@@ -11,29 +11,42 @@ LiveTranslate Assistant is a local-first Windows desktop copilot for live meetin
 - Uses dual-window UI: control panel + transparent overlay
 - Supports opt-in encrypted session history
 - Supports session export to JSON / Markdown
-- Includes control-panel search and filtering for transcript/assist streams
+- Uses minimal control panel UX with automatic system-audio capture default
 
 ## Quick start
 
 1. Install prerequisites:
    - Node.js 20+
-   - Python 3.10+
-   - Ollama
-2. Pull a local answer model:
-   - `ollama pull qwen2.5:7b-instruct-q4_K_M`
-3. Install Python STT dependency:
-   - `pip install faster-whisper`
+2. Install runtime dependencies (Windows, recommended stable path):
+   - `npm run runtime:setup`
+3. Pull local answer model set (full profile):
+   - `npm run models:pull`
 4. Install app dependencies:
    - `npm install`
 5. Run dev app:
    - `npm run dev`
 
-## Benchmark
+## Model footprint (selected demo package)
 
-1. Add fixed clips to `benchmark/clips/manifest.json`.
-2. Run benchmark:
-   - `npm run benchmark`
-3. Check JSON report in `benchmark/reports/`.
+- `qwen2.5:3b-instruct-q4_K_M`: ~1.9 GB
+- `qwen2.5:7b-instruct-q4_K_M`: ~4.7 GB
+- `qwen2.5:14b-instruct-q4_K_M`: ~9.0 GB
+- `small.en` (faster-whisper): ~0.48 GB
+- `medium.en` (faster-whisper): ~1.53 GB
+- `large-v3` (faster-whisper): ~3.09 GB
+- Model total: ~20.7 GB (practical disk use with cache: ~21-22 GB)
+
+## Benchmark and demo
+
+1. Prepare public sample clips:
+   - `npm run clips:prepare`
+2. Preload STT model files:
+   - `npm run stt:prewarm`
+3. Run latency model sweep:
+   - `npm run benchmark:sweep`
+4. End-to-end demo pipeline (steps 1-3 together):
+   - `npm run demo:pipeline`
+5. Check JSON reports in `benchmark/reports/`.
 
 ## History and export
 
@@ -77,6 +90,8 @@ LiveTranslate Assistant is a local-first Windows desktop copilot for live meetin
 - `docs/API_SPEC.md`
 - `docs/ROADMAP.md`
 - `docs/PERFORMANCE_PLAN.md`
+- `docs/MODEL_SETUP_TR.md`
+- `docs/EOD_2026-03-03_TR.md`
 - `docs/PRIVACY_TR.md`
 - `docs/CODE_SIGNING_TR.md`
 - `docs/RELEASE_STRATEGY.md`

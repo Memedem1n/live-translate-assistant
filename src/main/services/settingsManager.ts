@@ -25,6 +25,9 @@ const DEFAULT_SETTINGS: AppSettings = {
   overlayOpacity: 0.78,
   overlayVisible: true,
   overlayClickThrough: true,
+  autoHideControlWindow: true,
+  systemAudioMode: 'auto',
+  manualSystemSourceId: '',
   historyOptIn: false,
   hotkeys: {
     toggleOverlay: 'CommandOrControl+Shift+O',
@@ -102,6 +105,9 @@ export class SettingsManager {
     }
 
     this.settings.overlayOpacity = Math.min(1, Math.max(0.25, this.settings.overlayOpacity))
+    this.settings.autoHideControlWindow = this.settings.autoHideControlWindow !== false
+    this.settings.systemAudioMode = this.settings.systemAudioMode === 'manual' ? 'manual' : 'auto'
+    this.settings.manualSystemSourceId = String(this.settings.manualSystemSourceId || '')
     this.settings.vad = clampVad(this.settings.vad)
     this.settings.vadApplyMode = this.settings.vadApplyMode === 'restart' ? 'restart' : 'live'
     this.save()
@@ -156,6 +162,9 @@ export class SettingsManager {
           ...DEFAULT_SETTINGS.hotkeys,
           ...(parsed.hotkeys || {})
         },
+        autoHideControlWindow: parsed.autoHideControlWindow !== false,
+        systemAudioMode: parsed.systemAudioMode === 'manual' ? 'manual' : 'auto',
+        manualSystemSourceId: String(parsed.manualSystemSourceId || ''),
         vad: clampVad(mergedVad),
         vadApplyMode: parsed.vadApplyMode === 'restart' ? 'restart' : 'live'
       }

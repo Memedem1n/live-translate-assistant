@@ -122,6 +122,9 @@ export interface AppSettings {
   overlayOpacity: number
   overlayVisible: boolean
   overlayClickThrough: boolean
+  autoHideControlWindow: boolean
+  systemAudioMode: 'auto' | 'manual'
+  manualSystemSourceId: string
   historyOptIn: boolean
   hotkeys: HotkeySettings
   vad: VadConfig
@@ -190,6 +193,9 @@ export interface WindowAPI {
   listHistorySessions: () => Promise<HistoryListResult>
   exportSessionHistory: (payload: HistoryExportRequest) => Promise<HistoryExportResult>
   setOverlay: (settings: OverlaySettings) => Promise<{ success: boolean }>
+  hideControlWindow: () => Promise<{ success: boolean }>
+  showControlWindow: () => Promise<{ success: boolean }>
+  toggleControlWindowVisibility: () => Promise<{ success: boolean; visible: boolean }>
   onTranscriptFinal: (cb: (event: TranscriptEvent) => void) => () => void
   onAssistUpdate: (cb: (event: AssistEvent) => void) => () => void
   onSessionState: (cb: (event: SessionStateEvent) => void) => () => void

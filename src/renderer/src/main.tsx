@@ -10,14 +10,20 @@ async function bootstrap(): Promise<void> {
   useAppStore.getState().setView(view)
 
   try {
-    const [settings, sources, history] = await Promise.all([
+    const [settings, sources] = await Promise.all([
       window.api.getSettings(),
-      window.api.getAudioSources(),
-      window.api.listHistorySessions()
+      window.api.getAudioSources()
     ])
-    useAppStore.getState().setSettings(settings)
-    useAppStore.getState().setAudioSources(sources)
-    useAppStore.getState().setHistoryList(history)
+    const store = useAppStore.getState()
+    store.setSettings(settings)
+    store.setAudioSources(sources)
+
+    if (settings.systemAudioMode === 'manual' && settings.manualSystemSourceId) {
+      const matched = sources.find((item) => item.id === settings.manualSystemSourceId)
+      if (matched) {
+        store.setSelectedSystemSourceId(matched.id)
+      }
+    }
   } catch (error) {
     useAppStore
       .getState()

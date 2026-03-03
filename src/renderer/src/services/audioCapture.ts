@@ -15,12 +15,44 @@ interface ChannelStartOptions {
 }
 
 interface CaptureStartOptions {
-  systemSourceId: string
+  systemSourceId?: string
   systemSourceName?: string
   onChunk: OnChunk
   onDiagnostics?: (event: CaptureDiagnosticsEvent) => void
   onSourceChanged?: (source: AudioSourceItem) => void
   onFatalError?: (error: Error) => void
+}
+
+function scoreAudioSource(source: AudioSourceItem): number {
+  const id = source.id.toLowerCase()
+  const name = source.name.toLowerCase()
+
+  let score = 0
+  if (id.startsWith('screen:')) score += 40
+  if (name.includes('entire screen')) score += 30
+  if (name.includes('screen')) score += 20
+  if (name.includes('display')) score += 12
+  if (name.includes('window')) score -= 10
+  return score
+}
+
+function rankAudioSources(
+  sources: AudioSourceItem[],
+  preferredId?: string,
+  excludeId?: string
+): AudioSourceItem[] {
+  if (sources.length === 0) return []
+
+  const filtered = excludeId ? sources.filter((item) => item.id !== excludeId) : sources
+  if (filtered.length === 0) return []
+
+  const sorted = [...filtered].sort((a, b) => scoreAudioSource(b) - scoreAudioSource(a))
+  if (!preferredId) return sorted
+
+  const preferred = sorted.find((item) => item.id === preferredId)
+  if (!preferred) return sorted
+
+  return [preferred, ...sorted.filter((item) => item.id !== preferredId)]
 }
 
 class ChannelCapture {
@@ -244,14 +276,41 @@ export class MeetingAudioCapture {
   }
 
   async start(options: CaptureStartOptions): Promise<void> {
-    this.systemSourceId = options.systemSourceId
-    this.systemSourceName = options.systemSourceName || options.systemSourceId
     this.onChunk = options.onChunk
     this.onDiagnostics = options.onDiagnostics || null
     this.onSourceChanged = options.onSourceChanged || null
     this.onFatalError = options.onFatalError || null
     this.reconnecting = false
     this.stopped = false
+
+    const sources = await window.api.getAudioSources()
+    const candidates = rankAudioSources(sources, options.systemSourceId)
+    if (candidates.length === 0) {
+      throw new Error('System audio source bulunamadi. Ekran yakalama iznini kontrol edin.')
+    }
+
+    let selectedSource: AudioSourceItem | null = null
+    for (const candidate of candidates) {
+      try {
+        await this.remoteChannel.startSystem(candidate.id, this.buildRemoteOptions())
+        selectedSource = candidate
+        break
+      } catch {
+        // Try next source candidate until one becomes capturable.
+      }
+    }
+
+    if (!selectedSource) {
+      throw new Error(
+        'Sistem ses kaynagi acilamadi. Ekran paylasim/kayit izinlerini kontrol edip tekrar deneyin.'
+      )
+    }
+
+    this.systemSourceId = selectedSource.id
+    this.systemSourceName = selectedSource.name || options.systemSourceName || selectedSource.id
+    if (options.systemSourceId !== selectedSource.id) {
+      this.onSourceChanged?.(selectedSource)
+    }
 
     this.diagnostics = {
       tsMs: Date.now(),
@@ -266,7 +325,6 @@ export class MeetingAudioCapture {
     }
 
     try {
-      await this.remoteChannel.startSystem(this.systemSourceId, this.buildRemoteOptions())
       await this.selfChannel.startMicrophone(this.buildSelfOptions())
 
       navigator.mediaDevices.addEventListener('devicechange', this.handleDeviceChange)
@@ -380,9 +438,9 @@ export class MeetingAudioCapture {
 
       this.setReconnectState('fallback', 1)
       const sources = await window.api.getAudioSources()
-      const fallback = sources.find((source) => source.id !== this.systemSourceId)
+      const fallbackCandidates = rankAudioSources(sources, undefined, this.systemSourceId)
 
-      if (fallback) {
+      for (const fallback of fallbackCandidates) {
         const switched = await this.trySwitchRemoteSource(fallback.id, fallback.name)
         if (switched) {
           this.systemSourceId = fallback.id

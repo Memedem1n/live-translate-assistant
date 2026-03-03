@@ -19,6 +19,7 @@ Events:
 from __future__ import annotations
 
 import base64
+import ctypes.util
 import json
 import os
 import tempfile
@@ -113,7 +114,15 @@ def ensure_model(target_model: str):
 
     errors = []
 
-    for device, compute in (("cuda", "int8_float16"), ("cpu", "int8")):
+    supports_cuda = True
+    if os.name == "nt":
+        supports_cuda = has_cuda12_runtime()
+
+    attempts = [("cpu", "int8")]
+    if supports_cuda:
+        attempts = [("cuda", "int8_float16"), ("cpu", "int8")]
+
+    for device, compute in attempts:
         try:
             model = WhisperModel(target_model, device=device, compute_type=compute)
             model_name = target_model
@@ -122,6 +131,29 @@ def ensure_model(target_model: str):
             errors.append(f"{device}/{compute}: {exc}")
 
     raise RuntimeError("Unable to load Whisper model. " + " | ".join(errors))
+
+
+def has_cuda12_runtime() -> bool:
+    if ctypes.util.find_library("cublas64_12"):
+        return True
+
+    dll_name = "cublas64_12.dll"
+
+    for raw_dir in os.environ.get("PATH", "").split(os.pathsep):
+        if not raw_dir:
+            continue
+        candidate = os.path.join(raw_dir, dll_name)
+        if os.path.exists(candidate):
+            return True
+
+    toolkit_root = r"C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA"
+    if os.path.isdir(toolkit_root):
+        for entry in os.listdir(toolkit_root):
+            candidate = os.path.join(toolkit_root, entry, "bin", dll_name)
+            if os.path.exists(candidate):
+                return True
+
+    return False
 
 
 def parse_channel_vad(value: dict, fallback: Dict[str, float]) -> Dict[str, float]:

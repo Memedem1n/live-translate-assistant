@@ -2,6 +2,11 @@
 
 Add your fixed audio clips to this directory and list them in `manifest.json`.
 
+If you want a quick public sample set instead of private meeting recordings:
+
+1. Run `npm run clips:prepare`
+2. Use manifest path `artifacts/bench_clips/manifest.json`
+
 Recommended protocol:
 
 1. Keep 20 clips stable across runs.

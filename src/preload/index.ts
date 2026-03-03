@@ -47,6 +47,10 @@ const api: WindowAPI = {
     ipcRenderer.invoke('history:export', payload) as Promise<HistoryExportResult>,
   setOverlay: (settings: OverlaySettings) =>
     ipcRenderer.invoke('overlay:set', settings) as Promise<{ success: boolean }>,
+  hideControlWindow: () => ipcRenderer.invoke('control:hide') as Promise<{ success: boolean }>,
+  showControlWindow: () => ipcRenderer.invoke('control:show') as Promise<{ success: boolean }>,
+  toggleControlWindowVisibility: () =>
+    ipcRenderer.invoke('control:toggle') as Promise<{ success: boolean; visible: boolean }>,
   onTranscriptFinal: (cb) => createListener<TranscriptEvent>('transcript:final', cb),
   onAssistUpdate: (cb) => createListener<AssistEvent>('assist:update', cb),
   onSessionState: (cb) => createListener<SessionStateEvent>('session:state', cb),
