@@ -21,6 +21,7 @@ Write-Host "[demo] model sweep baslatiliyor..."
 & $venvPython "scripts/model_sweep.py" `
   --manifest "artifacts/bench_clips/manifest.json" `
   --runs $Runs `
+  --warmup-runs 1 `
   --stt-device auto `
   --target-stt-ms 800 `
   --target-first-token-ms 900 `

@@ -34,6 +34,7 @@ def run_combo(
     combo: Tuple[str, str],
     manifest: Path,
     runs: int,
+    warmup_runs: int,
     out_dir: Path,
     stt_device: str,
 ) -> Path:
@@ -47,6 +48,8 @@ def run_combo(
         str(manifest),
         "--runs",
         str(runs),
+        "--warmup-runs",
+        str(warmup_runs),
         "--stt-model",
         stt_model,
         "--assist-model",
@@ -95,6 +98,12 @@ def main() -> int:
     )
     parser.add_argument("--runs", type=int, default=3, help="Runs per combo.")
     parser.add_argument(
+        "--warmup-runs",
+        type=int,
+        default=1,
+        help="Initial runs treated as cold-start. Gate uses warm runs only.",
+    )
+    parser.add_argument(
         "--combo",
         action="append",
         default=[],
@@ -130,7 +139,14 @@ def main() -> int:
 
     for combo in combos:
         try:
-            report_path = run_combo(combo, manifest_path, args.runs, out_dir, args.stt_device)
+            report_path = run_combo(
+                combo=combo,
+                manifest=manifest_path,
+                runs=args.runs,
+                warmup_runs=args.warmup_runs,
+                out_dir=out_dir,
+                stt_device=args.stt_device,
+            )
             report = read_json(report_path)
         except Exception as exc:
             failures.append(
@@ -142,9 +158,35 @@ def main() -> int:
             )
             continue
 
-        stt_p50 = get_metric(report, ["summary", "stt_first_chunk_ms", "p50"])
-        first_token_p50 = get_metric(report, ["summary", "assist_first_token_ms", "p50"])
-        assist_final_p50 = get_metric(report, ["summary", "assist_final_ms", "p50"])
+        warm_stt_p50 = get_metric(report, ["summary", "warm_gate", "stt_first_chunk_ms", "p50"])
+        warm_first_token_p50 = get_metric(
+            report, ["summary", "warm_gate", "assist_first_token_ms", "p50"]
+        )
+        warm_assist_final_p50 = get_metric(report, ["summary", "warm_gate", "assist_final_ms", "p50"])
+
+        stt_p50 = (
+            warm_stt_p50
+            if warm_stt_p50 is not None
+            else get_metric(report, ["summary", "stt_first_chunk_ms", "p50"])
+        )
+        first_token_p50 = (
+            warm_first_token_p50
+            if warm_first_token_p50 is not None
+            else get_metric(report, ["summary", "assist_first_token_ms", "p50"])
+        )
+        assist_final_p50 = (
+            warm_assist_final_p50
+            if warm_assist_final_p50 is not None
+            else get_metric(report, ["summary", "assist_final_ms", "p50"])
+        )
+
+        cold_stt_p50 = get_metric(report, ["summary", "cold_start", "stt_first_chunk_ms", "p50"])
+        cold_first_token_p50 = get_metric(
+            report, ["summary", "cold_start", "assist_first_token_ms", "p50"]
+        )
+        cold_assist_final_p50 = get_metric(
+            report, ["summary", "cold_start", "assist_final_ms", "p50"]
+        )
 
         pass_gate = bool(
             stt_p50 is not None
@@ -163,6 +205,12 @@ def main() -> int:
                 "stt_p50_ms": stt_p50,
                 "assist_first_token_p50_ms": first_token_p50,
                 "assist_final_p50_ms": assist_final_p50,
+                "warm_stt_p50_ms": warm_stt_p50,
+                "warm_assist_first_token_p50_ms": warm_first_token_p50,
+                "warm_assist_final_p50_ms": warm_assist_final_p50,
+                "cold_stt_p50_ms": cold_stt_p50,
+                "cold_assist_first_token_p50_ms": cold_first_token_p50,
+                "cold_assist_final_p50_ms": cold_assist_final_p50,
                 "pass_latency_gate": pass_gate,
             }
         )
@@ -180,6 +228,7 @@ def main() -> int:
     final = {
         "generated_at": dt.datetime.utcnow().isoformat() + "Z",
         "manifest": str(manifest_path),
+        "warmup_runs": args.warmup_runs,
         "targets": {
             "stt_p50_ms": args.target_stt_ms,
             "assist_first_token_p50_ms": args.target_first_token_ms,

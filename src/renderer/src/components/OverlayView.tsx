@@ -1,14 +1,9 @@
-import { useEffect, useMemo, useRef } from 'react'
+import { useMemo } from 'react'
 import { AssistEvent } from '../../../shared/contracts'
 import { useAppStore } from '../store/useAppStore'
 
-interface OverlayLine {
-  key: string
-  type: 'speech' | 'reply'
-  speaker: 'remote' | 'self' | 'assistant'
-  textEn: string
-  textTr: string
-}
+const VISIBLE_TRANSCRIPT_COUNT = 3
+const VISIBLE_ASSIST_COUNT = 3
 
 function pickAssistByTranscript(assistUpdates: AssistEvent[]): Map<string, AssistEvent> {
   const map = new Map<string, AssistEvent>()
@@ -35,44 +30,81 @@ function pickAssistByTranscript(assistUpdates: AssistEvent[]): Map<string, Assis
   return map
 }
 
+function assistPrimaryText(item: AssistEvent): string {
+  const sourceLanguage = String(item.sourceLanguage || '').toLowerCase()
+  if (sourceLanguage === 'tr') {
+    return item.replyTr || item.replyEn || item.rawText || '-'
+  }
+  return item.replyEn || item.replyTr || item.rawText || '-'
+}
+
+function assistSecondaryText(item: AssistEvent): string {
+  const sourceLanguage = String(item.sourceLanguage || '').toLowerCase()
+  if (sourceLanguage === 'tr') {
+    return item.replyEn || item.translationTr || '-'
+  }
+  return item.replyTr || item.translationTr || '-'
+}
+
 export function OverlayView(): React.JSX.Element {
   const { transcripts, assistUpdates, session } = useAppStore()
-  const streamRef = useRef<HTMLDivElement | null>(null)
 
-  const lines = useMemo(() => {
-    const assistByTranscript = pickAssistByTranscript(assistUpdates)
-    const recentTranscripts = transcripts.slice(-14)
-    const rendered: OverlayLine[] = []
+  const assistByTranscript = useMemo(() => {
+    return pickAssistByTranscript(assistUpdates)
+  }, [assistUpdates])
 
-    for (const transcript of recentTranscripts) {
-      const assist = assistByTranscript.get(transcript.id)
+  const transcriptFeed = useMemo(() => {
+    return transcripts
+      .filter((item) => item.speaker === 'remote')
+      .slice(-VISIBLE_TRANSCRIPT_COUNT)
+  }, [transcripts])
 
-      rendered.push({
-        key: `speech-${transcript.id}`,
-        type: 'speech',
-        speaker: transcript.speaker,
-        textEn: transcript.textEn,
-        textTr: assist?.translationTr || ''
-      })
+  const assistFeed = useMemo(() => {
+    const finalRows = assistUpdates.filter((item) => item.state === 'final')
+    const latestPartial = [...assistUpdates].reverse().find((item) => item.state === 'partial')
 
-      if (assist && (assist.replyEn || assist.replyTr || assist.rawText)) {
-        rendered.push({
-          key: `reply-${assist.id}`,
-          type: 'reply',
-          speaker: 'assistant',
-          textEn: assist.replyEn || assist.rawText || '',
-          textTr: assist.replyTr || ''
-        })
-      }
+    if (!latestPartial) {
+      return finalRows.slice(-VISIBLE_ASSIST_COUNT)
     }
 
-    return rendered
-  }, [assistUpdates, transcripts])
+    const carryFinalRows = finalRows
+      .filter((item) => item.id !== latestPartial.id)
+      .slice(-(VISIBLE_ASSIST_COUNT - 1))
+    return [...carryFinalRows, latestPartial]
+  }, [assistUpdates])
 
-  useEffect(() => {
-    if (!streamRef.current) return
-    streamRef.current.scrollTop = streamRef.current.scrollHeight
-  }, [lines])
+  const emptyState = useMemo(() => {
+    if (transcriptFeed.length === 0 && assistFeed.length === 0) {
+      return 'Dinleme baslayinca canli akis burada gorunecek.'
+    }
+    return null
+  }, [assistFeed.length, transcriptFeed.length])
+
+  const transcriptRows = useMemo(() => {
+    return transcriptFeed.map((transcript) => {
+      const assist = assistByTranscript.get(transcript.id)
+      return {
+        transcript,
+        assist
+      }
+    })
+  }, [assistByTranscript, transcriptFeed])
+
+  const transcriptSlots = useMemo(() => {
+    const rows = transcriptRows.slice(-VISIBLE_TRANSCRIPT_COUNT)
+    const placeholders = Array.from({
+      length: Math.max(0, VISIBLE_TRANSCRIPT_COUNT - rows.length)
+    }).map(() => null)
+    return [...placeholders, ...rows]
+  }, [transcriptRows])
+
+  const assistSlots = useMemo(() => {
+    const rows = assistFeed.slice(-VISIBLE_ASSIST_COUNT)
+    const placeholders = Array.from({
+      length: Math.max(0, VISIBLE_ASSIST_COUNT - rows.length)
+    }).map(() => null)
+    return [...placeholders, ...rows]
+  }, [assistFeed])
 
   return (
     <div className="overlay-root">
@@ -85,36 +117,97 @@ export function OverlayView(): React.JSX.Element {
           </div>
         </div>
 
-        <div className="overlay-stream" ref={streamRef}>
-          {lines.length === 0 && (
-            <div className="overlay-empty">Dinleme baslayinca EN/TR akis burada gorunecek.</div>
-          )}
-
-          {lines.map((line) => (
-            <div
-              className={`overlay-line ${line.type === 'reply' ? 'reply-line' : ''}`}
-              key={line.key}
-            >
-              <div className="overlay-line-top">
-                <span className={`badge ${line.speaker === 'assistant' ? 'remote' : line.speaker}`}>
-                  {line.speaker}
-                </span>
-                <span className="overlay-label">{line.type === 'reply' ? 'reply' : 'speech'}</span>
-              </div>
-
-              <div className="overlay-columns">
-                <div className="overlay-col">
-                  <div className="overlay-label">EN</div>
-                  <div className="overlay-text">{line.textEn || '-'}</div>
-                </div>
-                <div className="overlay-col">
-                  <div className="overlay-label">TR</div>
-                  <div className="overlay-text">{line.textTr || '-'}</div>
-                </div>
-              </div>
+        <div className="overlay-history-grid">
+          <div className="overlay-history-column">
+            <div className="overlay-column-title">
+              <span className="overlay-label">Son 3 Soru</span>
+              <span className="overlay-label">{transcriptFeed.length}/3</span>
             </div>
-          ))}
+            <div className="overlay-history-list">
+              {transcriptSlots.map((entry, index) => {
+                if (!entry) {
+                  return (
+                    <div
+                      className="overlay-history-item overlay-history-item-placeholder"
+                      key={`transcript-placeholder-${index}`}
+                    >
+                      <div className="overlay-empty">Bekleniyor...</div>
+                    </div>
+                  )
+                }
+
+                return (
+                  <div className="overlay-history-item" key={`speech-${entry.transcript.id}`}>
+                    <div className="overlay-line-top">
+                      <span className="badge remote">remote</span>
+                      <span className="overlay-label">
+                        {(entry.transcript.language || 'unknown').toUpperCase()}
+                      </span>
+                      <span className="overlay-label">
+                        {new Date(entry.transcript.emittedMs).toLocaleTimeString()}
+                      </span>
+                    </div>
+                    <div className="overlay-text">
+                      {entry.transcript.text || entry.transcript.textEn || '-'}
+                    </div>
+                    {entry.assist?.translationTr && (
+                      <div className="overlay-subtext">{entry.assist.translationTr}</div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+
+          <div className="overlay-history-column">
+            <div className="overlay-column-title">
+              <span className="overlay-label">Son 3 Assist</span>
+              <span className="overlay-label">
+                {assistFeed.filter((item) => item.state === 'final').length}
+                {assistFeed.some((item) => item.state === 'partial') ? '+canli' : ''}
+                /3
+              </span>
+            </div>
+            <div className="overlay-history-list">
+              {assistSlots.map((item, index) => {
+                if (!item) {
+                  return (
+                    <div
+                      className="overlay-history-item overlay-history-item-placeholder"
+                      key={`assist-placeholder-${index}`}
+                    >
+                      <div className="overlay-empty">Bekleniyor...</div>
+                    </div>
+                  )
+                }
+
+                return (
+                  <div
+                    className={`overlay-history-item reply-line ${item.state === 'partial' ? 'overlay-live-row' : ''}`}
+                    key={item.id}
+                  >
+                    <div className="overlay-line-top">
+                      <span className="badge remote">assistant</span>
+                      <span className="overlay-label">{Math.round(item.latencyMs)} ms</span>
+                      {item.state === 'partial' && <span className="overlay-live-badge">CANLI</span>}
+                      {item.personalizationMode && (
+                        <span className="overlay-label">{item.personalizationMode}</span>
+                      )}
+                    </div>
+                    <div className="overlay-text">{assistPrimaryText(item)}</div>
+                    <div className="overlay-subtext">{assistSecondaryText(item)}</div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
         </div>
+
+        {emptyState && (
+          <div className="overlay-empty overlay-empty-note">
+            {emptyState}
+          </div>
+        )}
       </div>
     </div>
   )

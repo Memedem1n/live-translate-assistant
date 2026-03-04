@@ -30,6 +30,7 @@ Varsayilan `full` profil:
 Adim adim:
 
 ```powershell
+npm run runtime:probe
 npm run clips:prepare
 npm run stt:prewarm
 npm run benchmark:sweep
@@ -46,6 +47,8 @@ npm run demo:pipeline
 - `stt_first_chunk_ms` p50 <= `800ms`
 - `assist_first_token_ms` p50 <= `900ms`
 - `assist_final_ms` p50 <= `2500ms`
+- Gecis karari `warm_gate` metriklerine gore verilir (prewarm sonrasi).
+- `cold_start` metrikleri sadece risk takibi icindir.
 
 ## 5) Raporlar
 

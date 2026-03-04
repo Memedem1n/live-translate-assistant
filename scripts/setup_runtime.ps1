@@ -93,8 +93,11 @@ function Ensure-VenvAndDeps {
   Write-Step "faster-whisper kuruluyor..."
   & $venvPython -m pip install faster-whisper
 
+  Write-Step "Dokuman import ve OCR bagimliliklari kuruluyor..."
+  & $venvPython -m pip install pypdf python-docx pillow pypdfium2 rapidocr-onnxruntime
+
   Write-Step "Kurulum dogrulaniyor..."
-  & $venvPython -c "import faster_whisper; print('faster_whisper_ok=1')"
+  & $venvPython -c "import faster_whisper, pypdf, docx, pypdfium2, rapidocr_onnxruntime; print('runtime_ok=1')"
 }
 
 Ensure-Winget

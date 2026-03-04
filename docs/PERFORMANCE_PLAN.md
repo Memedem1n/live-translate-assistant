@@ -19,6 +19,14 @@
 - `assist_final_ms` p50 <= 2500ms
 - Primary decision priority: keep first token under 1 second while preserving response quality.
 
+## Gate Measurement Policy
+
+- Official pass/fail decision uses `warm_gate` metrics (post-warmup runs).
+- `cold_start` metrics are tracked separately as startup-risk telemetry.
+- Default benchmark policy:
+  - `warmup_runs = 1`
+  - `runs >= 3` per combo for stable p50/p95.
+
 ## Quality Targets
 
 - Translation adequacy for technical content: >= 80%
@@ -46,6 +54,9 @@
 - Benchmark command: `npm run benchmark`
 - Clip manifest: `benchmark/clips/manifest.json`
 - Report output: `benchmark/reports/benchmark_*.json`
+- Warm/cold separation:
+  - `summary.cold_start.*`
+  - `summary.warm_gate.*`
 
 ## Agreed Sweep Matrix
 

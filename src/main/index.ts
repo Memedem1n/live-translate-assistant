@@ -68,13 +68,14 @@ function createControlWindow(): BrowserWindow {
 }
 
 function createOverlayWindow(): BrowserWindow {
-  const { width } = screen.getPrimaryDisplay().workAreaSize
-  const overlayWidth = Math.min(860, Math.max(560, Math.round(width * 0.56)))
+  const { width, height } = screen.getPrimaryDisplay().workAreaSize
+  const overlayWidth = Math.min(920, Math.max(620, Math.round(width * 0.6)))
+  const overlayHeight = Math.min(700, Math.max(420, Math.round(height * 0.52)))
   const window = new BrowserWindow({
     width: overlayWidth,
-    height: 280,
-    minWidth: 560,
-    minHeight: 220,
+    height: overlayHeight,
+    minWidth: 620,
+    minHeight: 420,
     frame: false,
     transparent: true,
     alwaysOnTop: true,
@@ -99,7 +100,7 @@ function createOverlayWindow(): BrowserWindow {
   window.setAlwaysOnTop(true, 'screen-saver')
   window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
   const x = Math.max(0, Math.round((width - overlayWidth) / 2))
-  window.setPosition(x, 10)
+  window.setPosition(x, 8)
 
   if (is.dev && process.env.ELECTRON_RENDERER_URL) {
     window.loadURL(`${process.env.ELECTRON_RENDERER_URL}?view=overlay`)

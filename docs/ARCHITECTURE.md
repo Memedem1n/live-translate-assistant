@@ -1,12 +1,12 @@
-# Architecture (V1.3)
+# Architecture (V1.5)
 
 ## Goal
 
 A local-first Windows desktop assistant for live meetings with:
 
-- English transcript (remote + self)
+- Multi-language transcript (remote + self, segment-level language detection)
 - Turkish translation of remote speech
-- Context-aware short reply suggestions in EN + TR
+- Context-aware short reply suggestions in source language / EN+TR policy
 - Dual-window UI (control + transparent overlay)
 
 ## Runtime Components
@@ -26,7 +26,11 @@ A local-first Windows desktop assistant for live meetings with:
 - Accepts NDJSON commands from stdin
 - Buffers PCM16 chunks by speaker channel
 - Uses per-channel silence/RMS gating and faster-whisper transcription
+- Uses shared runtime discovery (`scripts/runtime_env.py`) to prepare CUDA + venv NVIDIA DLL paths
+- Emits runtime health stream (`runtime_status`) including active device, warmup status, retry/fallback counters
+- Performs eager warmup before session ready, then retries CUDA once and falls back to CPU when needed
 - Supports runtime VAD updates (`update_vad`)
+- Supports language modes: `segment_auto`, `session_lock`, `manual(tr|en)`
 - Emits `ready`, `transcript`, `diagnostics`, and `error` events on stdout (NDJSON)
 
 3. Renderer (React)
@@ -50,6 +54,7 @@ A local-first Windows desktop assistant for live meetings with:
 3. Session start uses worker readiness handshake:
 
 - `session:start -> start_session(vad) -> worker ready -> phase running`
+- Startup uses eager warmup: STT ready + assist prewarm completes before stable running state.
 
 4. Worker emits transcript and diagnostics events:
 
@@ -70,6 +75,7 @@ A local-first Windows desktop assistant for live meetings with:
 - Overlay runtime state is synced from main via `overlay:state`
 - Diagnostics panel merges capture health + worker diagnostics
 - Latency dashboard renders p50/p95 from `metrics:latency`
+- Control panel also shows `stt:runtime-status` (active runtime mode/device, warmup, retry/fallback).
 
 7. History + export:
 
@@ -80,7 +86,8 @@ A local-first Windows desktop assistant for live meetings with:
 ## Benchmarking
 
 - `scripts/benchmark_runner.py` executes repeatable STT+assist latency runs against fixed clips in `benchmark/clips/manifest.json`.
-- Output reports are written to `benchmark/reports/*.json` with p50/p95 summaries.
+- Reports now split `cold_start` and `warm_gate` summaries; gate decisions are based on `warm_gate`.
+- Output reports are written to `benchmark/reports/*.json`.
 
 ## Packaging Notes
 

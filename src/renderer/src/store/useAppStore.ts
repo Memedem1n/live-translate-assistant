@@ -4,10 +4,14 @@ import {
   AssistEvent,
   AudioSourceItem,
   CaptureDiagnosticsEvent,
+  InterviewContextPreview,
   HistoryListResult,
   HistorySessionSummary,
   LatencyMetricsEvent,
+  ProfileSnapshot,
+  ProfileSyncStatus,
   SessionStateEvent,
+  SttRuntimeStatusEvent,
   TranscriptEvent,
   WorkerDiagnosticsEvent
 } from '../../../shared/contracts'
@@ -23,8 +27,12 @@ interface AppStore {
   transcripts: TranscriptEvent[]
   assistUpdates: AssistEvent[]
   workerDiagnostics: WorkerDiagnosticsEvent | null
+  sttRuntimeStatus: SttRuntimeStatusEvent | null
   captureDiagnostics: CaptureDiagnosticsEvent | null
   latencyMetrics: LatencyMetricsEvent | null
+  profileSnapshot: ProfileSnapshot | null
+  profileSyncStatus: ProfileSyncStatus | null
+  interviewContextPreview: InterviewContextPreview | null
   historyEncryptionAvailable: boolean
   historySessions: HistorySessionSummary[]
   error: string | null
@@ -38,8 +46,12 @@ interface AppStore {
   addTranscript: (event: TranscriptEvent) => void
   upsertAssist: (event: AssistEvent) => void
   setWorkerDiagnostics: (event: WorkerDiagnosticsEvent) => void
+  setSttRuntimeStatus: (event: SttRuntimeStatusEvent | null) => void
   setCaptureDiagnostics: (event: CaptureDiagnosticsEvent | null) => void
   setLatencyMetrics: (event: LatencyMetricsEvent | null) => void
+  setProfileSnapshot: (event: ProfileSnapshot | null) => void
+  setProfileSyncStatus: (event: ProfileSyncStatus | null) => void
+  setInterviewContextPreview: (event: InterviewContextPreview | null) => void
   setHistoryList: (result: HistoryListResult) => void
   setError: (message: string | null) => void
   reset: () => void
@@ -54,8 +66,12 @@ export const useAppStore = create<AppStore>((set) => ({
   transcripts: [],
   assistUpdates: [],
   workerDiagnostics: null,
+  sttRuntimeStatus: null,
   captureDiagnostics: null,
   latencyMetrics: null,
+  profileSnapshot: null,
+  profileSyncStatus: null,
+  interviewContextPreview: null,
   historyEncryptionAvailable: false,
   historySessions: [],
   error: null,
@@ -104,7 +120,7 @@ export const useAppStore = create<AppStore>((set) => ({
 
   addTranscript: (event) =>
     set((state) => ({
-      transcripts: [...state.transcripts.slice(-199), event]
+      transcripts: [...state.transcripts.slice(-799), event]
     })),
 
   upsertAssist: (event) =>
@@ -112,7 +128,7 @@ export const useAppStore = create<AppStore>((set) => ({
       const idx = state.assistUpdates.findIndex((item) => item.id === event.id)
       if (idx === -1) {
         return {
-          assistUpdates: [...state.assistUpdates.slice(-79), event]
+          assistUpdates: [...state.assistUpdates.slice(-399), event]
         }
       }
 
@@ -126,8 +142,12 @@ export const useAppStore = create<AppStore>((set) => ({
     }),
 
   setWorkerDiagnostics: (workerDiagnostics) => set({ workerDiagnostics }),
+  setSttRuntimeStatus: (sttRuntimeStatus) => set({ sttRuntimeStatus }),
   setCaptureDiagnostics: (captureDiagnostics) => set({ captureDiagnostics }),
   setLatencyMetrics: (latencyMetrics) => set({ latencyMetrics }),
+  setProfileSnapshot: (profileSnapshot) => set({ profileSnapshot }),
+  setProfileSyncStatus: (profileSyncStatus) => set({ profileSyncStatus }),
+  setInterviewContextPreview: (interviewContextPreview) => set({ interviewContextPreview }),
   setHistoryList: (result) =>
     set({
       historyEncryptionAvailable: result.encryptionAvailable,
@@ -141,8 +161,12 @@ export const useAppStore = create<AppStore>((set) => ({
       transcripts: [],
       assistUpdates: [],
       workerDiagnostics: null,
+      sttRuntimeStatus: null,
       captureDiagnostics: null,
       latencyMetrics: null,
+      profileSnapshot: null,
+      profileSyncStatus: null,
+      interviewContextPreview: null,
       historyEncryptionAvailable: false,
       historySessions: [],
       error: null

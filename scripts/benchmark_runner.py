@@ -9,10 +9,8 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import ctypes.util
 import datetime as dt
 import json
-import os
 import statistics
 import sys
 import time
@@ -21,69 +19,18 @@ import urllib.request
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from runtime_env import (
+    detect_cuda_runtime,
+    is_cuda_runtime_error,
+    load_whisper_model,
+    prepare_runtime_environment,
+)
 
 PRIMARY_PROMPT = (
     'You are a live meeting assistant. Output strict JSON only: '
     '{"translation_tr":"...","reply_en":"...","reply_tr":"...","confidence":0.0}. '
     "Keep technical terms in English when needed. Replies must be concise and actionable."
 )
-
-
-def create_whisper_model(model_name: str, device: str, compute_type: str):
-    from faster_whisper import WhisperModel
-
-    normalized_device = device.lower().strip()
-    normalized_compute = compute_type.strip()
-    attempts: List[tuple[str, str]] = []
-
-    supports_cuda = has_cuda12_runtime()
-
-    if normalized_device == "auto":
-        attempts = [("cpu", "int8")]
-        if supports_cuda:
-            attempts = [("cuda", "int8_float16"), ("cpu", "int8")]
-    elif normalized_device == "cuda":
-        attempts = [("cpu", "int8")]
-        if supports_cuda:
-            attempts = [
-                ("cuda", normalized_compute if normalized_compute != "auto" else "int8_float16")
-            ]
-        if normalized_compute == "auto" and supports_cuda:
-            attempts.append(("cpu", "int8"))
-    else:
-        attempts = [("cpu", normalized_compute if normalized_compute != "auto" else "int8")]
-
-    errors: List[str] = []
-    for selected_device, selected_compute in attempts:
-        try:
-            model = WhisperModel(model_name, device=selected_device, compute_type=selected_compute)
-            return model, selected_device, selected_compute
-        except Exception as exc:  # pragma: no cover
-            errors.append(f"{selected_device}/{selected_compute}: {exc}")
-
-    raise RuntimeError("Unable to load Whisper model. " + " | ".join(errors))
-
-
-def has_cuda12_runtime() -> bool:
-    if ctypes.util.find_library("cublas64_12"):
-        return True
-
-    dll_name = "cublas64_12.dll"
-    for raw_dir in os.environ.get("PATH", "").split(os.pathsep):
-        if not raw_dir:
-            continue
-        candidate = os.path.join(raw_dir, dll_name)
-        if os.path.exists(candidate):
-            return True
-
-    toolkit_root = r"C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA"
-    if os.path.isdir(toolkit_root):
-        for entry in os.listdir(toolkit_root):
-            candidate = os.path.join(toolkit_root, entry, "bin", dll_name)
-            if os.path.exists(candidate):
-                return True
-
-    return False
 
 
 def percentile(values: List[float], ratio: float) -> Optional[float]:
@@ -109,8 +56,8 @@ def summary(values: List[float]) -> Dict[str, Optional[float]]:
 def load_manifest(path: Path) -> Dict[str, Any]:
     if not path.exists():
         raise FileNotFoundError(f"Manifest not found: {path}")
-    with path.open("r", encoding="utf-8") as f:
-        data = json.load(f)
+    with path.open("r", encoding="utf-8") as handle:
+        data = json.load(handle)
     if not isinstance(data.get("clips"), list):
         raise ValueError("Manifest must contain 'clips' array.")
     return data
@@ -148,7 +95,9 @@ def ollama_stream_assist(
             {"role": "system", "content": PRIMARY_PROMPT},
             {
                 "role": "user",
-                "content": f"Context:\n{chr(10).join(context_lines)}\n\nLatest remote sentence:\n{remote_question}",
+                "content": (
+                    f"Context:\n{chr(10).join(context_lines)}\n\nLatest remote sentence:\n{remote_question}"
+                ),
             },
         ],
     }
@@ -190,6 +139,37 @@ def ollama_stream_assist(
     }
 
 
+def prewarm_assist(base_url: str, model: str) -> float:
+    payload = {
+        "model": model,
+        "stream": False,
+        "options": {"temperature": 0.0, "num_ctx": 1024},
+        "messages": [
+            {"role": "system", "content": PRIMARY_PROMPT},
+            {
+                "role": "user",
+                "content": 'Context:\n[remote] warmup\n\nLatest remote sentence:\nRespond with {"translation_tr":"ok","reply_en":"ok","reply_tr":"ok","confidence":0.9}',
+            },
+        ],
+    }
+
+    req = urllib.request.Request(
+        url=f"{base_url.rstrip('/')}/api/chat",
+        method="POST",
+        headers={"Content-Type": "application/json"},
+        data=json.dumps(payload).encode("utf-8"),
+    )
+
+    started = time.perf_counter()
+    with urllib.request.urlopen(req, timeout=120) as response:
+        _ = response.read()
+    return round((time.perf_counter() - started) * 1000.0, 2)
+
+
+def append_metric(target: List[float], value: float) -> None:
+    target.append(float(value))
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run repeatable STT + assist benchmarks.")
     parser.add_argument(
@@ -198,6 +178,12 @@ def main() -> int:
         help="Path to benchmark clip manifest JSON.",
     )
     parser.add_argument("--runs", type=int, default=3, help="Number of benchmark repetitions.")
+    parser.add_argument(
+        "--warmup-runs",
+        type=int,
+        default=1,
+        help="Initial runs considered cold-start only. Gate uses remaining warm runs.",
+    )
     parser.add_argument("--stt-model", default="small.en", help="faster-whisper model name.")
     parser.add_argument(
         "--stt-device",
@@ -225,6 +211,9 @@ def main() -> int:
     )
     args = parser.parse_args()
 
+    prepare_runtime_environment()
+    runtime_info = detect_cuda_runtime()
+
     manifest_path = Path(args.clips_manifest).resolve()
     try:
         manifest = load_manifest(manifest_path)
@@ -238,7 +227,7 @@ def main() -> int:
         return 1
 
     try:
-        from faster_whisper import WhisperModel  # noqa: F401
+        import faster_whisper  # noqa: F401
     except Exception as exc:
         print(
             "[benchmark] faster-whisper not available. Install with: pip install faster-whisper",
@@ -251,24 +240,49 @@ def main() -> int:
         f"[benchmark] Loading STT model: {args.stt_model} (device={args.stt_device}, compute={args.stt_compute_type})"
     )
     try:
-        model, resolved_device, resolved_compute = create_whisper_model(
-            args.stt_model, args.stt_device, args.stt_compute_type
+        model, resolved_device, resolved_compute, runtime_info, _errors = load_whisper_model(
+            model_name=args.stt_model,
+            runtime_mode=args.stt_device,
+            compute_type=args.stt_compute_type,
         )
     except Exception as exc:
         print(f"[benchmark] Failed to load Whisper model: {exc}", file=sys.stderr)
         return 1
 
     print(f"[benchmark] Whisper runtime selected: {resolved_device}/{resolved_compute}")
+    print(
+        "[benchmark] CUDA runtime:"
+        f" available={runtime_info.get('cuda_available', False)}"
+        f" device_count={runtime_info.get('cuda_device_count', 0)}"
+    )
 
-    stt_ms_values: List[float] = []
-    assist_first_token_ms_values: List[float] = []
-    assist_final_ms_values: List[float] = []
+    try:
+        assist_prewarm_ms = prewarm_assist(args.ollama_base_url, args.assist_model)
+        print(f"[benchmark] Assist prewarm complete in {assist_prewarm_ms}ms")
+    except Exception as exc:
+        print(f"[benchmark] Assist prewarm failed: {exc}", file=sys.stderr)
+        return 1
+
+    warmup_runs = max(0, min(args.warmup_runs, args.runs))
+    stt_all: List[float] = []
+    stt_cold: List[float] = []
+    stt_warm: List[float] = []
+    assist_first_all: List[float] = []
+    assist_first_cold: List[float] = []
+    assist_first_warm: List[float] = []
+    assist_final_all: List[float] = []
+    assist_final_cold: List[float] = []
+    assist_final_warm: List[float] = []
+
     clip_results: List[Dict[str, Any]] = []
     active_device = resolved_device
     active_compute = resolved_compute
+    fallback_to_cpu_count = 0
 
     for run_idx in range(args.runs):
-        print(f"[benchmark] Run {run_idx + 1}/{args.runs}")
+        bucket = "cold_start" if run_idx < warmup_runs else "warm_gate"
+        print(f"[benchmark] Run {run_idx + 1}/{args.runs} [{bucket}]")
+
         for clip in clips:
             clip_id = str(clip.get("id") or f"clip_{run_idx}")
             clip_path = (manifest_path.parent / str(clip.get("audio_path") or "")).resolve()
@@ -279,26 +293,22 @@ def main() -> int:
             try:
                 stt_result = transcribe_clip(model, clip_path)
             except Exception as exc:
-                message = str(exc).lower()
                 should_fallback_cpu = (
                     active_device == "cuda"
-                    and ("cublas" in message or "cuda" in message)
                     and args.stt_device in ("auto", "cuda")
+                    and is_cuda_runtime_error(exc)
                 )
 
                 if should_fallback_cpu:
-                    print(
-                        f"[benchmark] CUDA runtime error detected during transcription: {exc}"
+                    fallback_to_cpu_count += 1
+                    print(f"[benchmark] CUDA runtime error detected during transcription: {exc}")
+                    print("[benchmark] Falling back to CPU/int8...")
+                    model, active_device, active_compute, runtime_info, _errors = load_whisper_model(
+                        model_name=args.stt_model,
+                        runtime_mode="cpu",
+                        compute_type="auto",
                     )
-                    print(
-                        "[benchmark] Falling back to CPU/int8..."
-                    )
-                    model, active_device, active_compute = create_whisper_model(
-                        args.stt_model, "cpu", "auto"
-                    )
-                    print(
-                        f"[benchmark] Whisper runtime switched to: {active_device}/{active_compute}"
-                    )
+                    print(f"[benchmark] Whisper runtime switched to: {active_device}/{active_compute}")
                     stt_result = transcribe_clip(model, clip_path)
                 else:
                     print(
@@ -306,7 +316,12 @@ def main() -> int:
                         file=sys.stderr,
                     )
                     return 1
-            stt_ms_values.append(stt_result["latency_ms"])
+
+            append_metric(stt_all, stt_result["latency_ms"])
+            if bucket == "cold_start":
+                append_metric(stt_cold, stt_result["latency_ms"])
+            else:
+                append_metric(stt_warm, stt_result["latency_ms"])
 
             context_lines = clip.get("context_lines") or []
             if not isinstance(context_lines, list):
@@ -318,6 +333,7 @@ def main() -> int:
                 clip_results.append(
                     {
                         "run": run_idx + 1,
+                        "bucket": bucket,
                         "clip_id": clip_id,
                         "clip_path": str(clip_path),
                         "stt_latency_ms": stt_result["latency_ms"],
@@ -334,12 +350,22 @@ def main() -> int:
                 remote_question=remote_question,
             )
             if assist_result["first_token_ms"] is not None:
-                assist_first_token_ms_values.append(float(assist_result["first_token_ms"]))
-            assist_final_ms_values.append(float(assist_result["final_ms"]))
+                append_metric(assist_first_all, float(assist_result["first_token_ms"]))
+                if bucket == "cold_start":
+                    append_metric(assist_first_cold, float(assist_result["first_token_ms"]))
+                else:
+                    append_metric(assist_first_warm, float(assist_result["first_token_ms"]))
+
+            append_metric(assist_final_all, float(assist_result["final_ms"]))
+            if bucket == "cold_start":
+                append_metric(assist_final_cold, float(assist_result["final_ms"]))
+            else:
+                append_metric(assist_final_warm, float(assist_result["final_ms"]))
 
             clip_results.append(
                 {
                     "run": run_idx + 1,
+                    "bucket": bucket,
                     "clip_id": clip_id,
                     "clip_path": str(clip_path),
                     "stt_latency_ms": stt_result["latency_ms"],
@@ -352,17 +378,38 @@ def main() -> int:
         "generated_at": dt.datetime.utcnow().isoformat() + "Z",
         "manifest": str(manifest_path),
         "runs": args.runs,
+        "warmup_runs": warmup_runs,
         "stt_model": args.stt_model,
         "assist_model": args.assist_model,
         "ollama_base_url": args.ollama_base_url,
         "resolved_runtime": {
+            "requested_mode": args.stt_device,
             "device": active_device,
             "compute_type": active_compute,
         },
+        "runtime_trace": {
+            "prepared_paths": runtime_info.get("prepared_paths", []),
+            "cublas_path": runtime_info.get("cublas_path"),
+            "cudnn_path": runtime_info.get("cudnn_path"),
+            "cuda_available": runtime_info.get("cuda_available", False),
+            "cuda_device_count": runtime_info.get("cuda_device_count", 0),
+            "fallback_to_cpu_count": fallback_to_cpu_count,
+            "assist_prewarm_ms": assist_prewarm_ms,
+        },
         "summary": {
-            "stt_first_chunk_ms": summary(stt_ms_values),
-            "assist_first_token_ms": summary(assist_first_token_ms_values),
-            "assist_final_ms": summary(assist_final_ms_values),
+            "stt_first_chunk_ms": summary(stt_all),
+            "assist_first_token_ms": summary(assist_first_all),
+            "assist_final_ms": summary(assist_final_all),
+            "cold_start": {
+                "stt_first_chunk_ms": summary(stt_cold),
+                "assist_first_token_ms": summary(assist_first_cold),
+                "assist_final_ms": summary(assist_final_cold),
+            },
+            "warm_gate": {
+                "stt_first_chunk_ms": summary(stt_warm),
+                "assist_first_token_ms": summary(assist_first_warm),
+                "assist_final_ms": summary(assist_final_warm),
+            },
         },
         "clips": clip_results,
     }
@@ -370,8 +417,8 @@ def main() -> int:
     out_dir = Path(args.out).resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
     out_file = out_dir / f"benchmark_{dt.datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.json"
-    with out_file.open("w", encoding="utf-8") as f:
-        json.dump(report, f, ensure_ascii=False, indent=2)
+    with out_file.open("w", encoding="utf-8") as handle:
+        json.dump(report, handle, ensure_ascii=False, indent=2)
 
     print("[benchmark] Complete")
     print(f"[benchmark] Report: {out_file}")

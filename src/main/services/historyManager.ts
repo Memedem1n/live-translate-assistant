@@ -176,7 +176,9 @@ export class HistoryManager {
     const transcriptLines = record.transcripts
       .map((item) => {
         const confidence = `${Math.round((item.confidence || 0) * 100)}%`
-        return `| ${toIso(item.tEndMs)} | ${item.speaker} | ${confidence} | ${escapeMdCell(item.textEn)} |`
+        const language = (item.language || 'unknown').toUpperCase()
+        const text = item.text || item.textEn || ''
+        return `| ${toIso(item.tEndMs)} | ${item.speaker} | ${language} | ${confidence} | ${escapeMdCell(text)} |`
       })
       .join('\n')
 
@@ -203,9 +205,9 @@ export class HistoryManager {
       '',
       '## Transcripts',
       '',
-      '| Time (UTC) | Speaker | Confidence | Text EN |',
-      '| --- | --- | --- | --- |',
-      transcriptLines || '| - | - | - | - |',
+      '| Time (UTC) | Speaker | Language | Confidence | Text |',
+      '| --- | --- | --- | --- | --- |',
+      transcriptLines || '| - | - | - | - | - |',
       '',
       '## Assist Outputs',
       '',

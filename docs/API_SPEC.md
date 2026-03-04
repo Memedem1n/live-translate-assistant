@@ -1,10 +1,14 @@
-# IPC/API Spec (V1.4)
+# IPC/API Spec (V1.5)
 
 ## IPC Invokes
 
 ### `settings:get`
 
 Returns `AppSettings`.
+
+Notable fields:
+
+- `sttRuntimeMode: "auto" | "cuda" | "cpu"`
 
 ### `settings:update`
 
@@ -36,7 +40,7 @@ Input:
 
 ### `session:start`
 
-Input: `{ mode: "meeting"; sttModel?: string; vad?: VadConfig }`
+Input: `{ mode: "meeting"; sttModel?: string; sttRuntimeMode?: "auto" | "cuda" | "cpu"; sttLanguageMode?: "segment_auto" | "session_lock" | "manual"; manualSttLanguage?: "tr" | "en"; vad?: VadConfig }`
 Output: `{ success: boolean }`
 
 ### `session:stop`
@@ -50,7 +54,7 @@ Output: `{ success: boolean; applied: boolean; requiresRestart: boolean }`
 
 ### `transcript:inject`
 
-Input: `{ speaker: "remote" | "self"; textEn: string }`
+Input: `{ speaker: "remote" | "self"; text: string; language?: string }`
 Output: `{ success: boolean }`
 
 ### `overlay:set`
@@ -80,7 +84,10 @@ Payload:
 
 - `id`
 - `speaker`
-- `textEn`
+- `text`
+- `textEn` (legacy alias)
+- `language`
+- `languageConfidence?`
 - `isFinal`
 - `tStartMs`
 - `tEndMs`
@@ -93,6 +100,9 @@ Payload:
 
 - `id`
 - `transcriptId`
+- `sourceLanguage?`
+- `sourceText?`
+- `outputPolicy?`: `source_based | bilingual`
 - `state`: `partial | final | error`
 - `rawText?`
 - `translationTr?`
@@ -142,6 +152,23 @@ Payload:
 - `assistFirstTokenMs`: `{ latest, p50, p95, count }`
 - `assistFinalMs`: `{ latest, p50, p95, count }`
 - `workerErrorRate: number`
+- `updatedAtMs: number`
+
+### `stt:runtime-status`
+
+Payload:
+
+- `phase: "idle" | "loading" | "warming" | "running" | "degraded" | "error"`
+- `requestedMode: "auto" | "cuda" | "cpu"`
+- `activeDevice: "cuda" | "cpu" | null`
+- `computeType: string | null`
+- `cudaDetected: boolean`
+- `cudaDeviceCount: number`
+- `cudaRetryCount: number`
+- `fallbackToCpuCount: number`
+- `warmupMs: number | null`
+- `lastError?: string`
+- `model?: string`
 - `updatedAtMs: number`
 
 ### `shortcut:mute-toggle`

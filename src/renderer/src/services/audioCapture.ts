@@ -3,7 +3,8 @@
   AudioSourceItem,
   CaptureDiagnosticsEvent,
   ReconnectState,
-  Speaker
+  Speaker,
+  SystemAudioStrategy
 } from '../../../shared/contracts'
 
 type OnChunk = (chunk: AudioChunkInput) => void
@@ -17,10 +18,40 @@ interface ChannelStartOptions {
 interface CaptureStartOptions {
   systemSourceId?: string
   systemSourceName?: string
+  strategy?: SystemAudioStrategy
+  captureMicrophone?: boolean
   onChunk: OnChunk
   onDiagnostics?: (event: CaptureDiagnosticsEvent) => void
   onSourceChanged?: (source: AudioSourceItem) => void
   onFatalError?: (error: Error) => void
+}
+
+const AUTO_SOURCE_PROBE_MS = 900
+const AUTO_SOURCE_ACTIVE_RMS_THRESHOLD = 70
+const REMOTE_HEALTH_WINDOW_MS = 3500
+const REMOTE_SILENCE_SUSPECT_MS = 4000
+const LIVE_SWITCH_COOLDOWN_MS = 8000
+const LIVE_SWITCH_MIN_SCORE = 110
+const LIVE_SWITCH_RATIO = 1.35
+
+type CaptureErrorCode =
+  | 'permission_denied'
+  | 'device_not_found'
+  | 'microphone_unavailable'
+  | 'device_busy'
+  | 'stream_aborted'
+  | 'audio_capture_error'
+
+interface SourceScore {
+  id: string
+  peakRms: number
+  score: number
+}
+
+function average(values: number[]): number {
+  if (values.length === 0) return 0
+  const total = values.reduce((acc, value) => acc + value, 0)
+  return total / values.length
 }
 
 function scoreAudioSource(source: AudioSourceItem): number {
@@ -55,12 +86,60 @@ function rankAudioSources(
   return [preferred, ...sorted.filter((item) => item.id !== preferredId)]
 }
 
+function classifyCaptureError(
+  error: unknown,
+  channel: 'system' | 'microphone' = 'system'
+): { code: CaptureErrorCode; message: string } {
+  if (error instanceof DOMException) {
+    if (error.name === 'NotAllowedError' || error.name === 'SecurityError') {
+      return {
+        code: 'permission_denied',
+        message: 'Mikrofon/ekran yakalama izni gerekli. Sistem izinlerini kontrol edin.'
+      }
+    }
+
+    if (error.name === 'NotFoundError' || error.name === 'OverconstrainedError') {
+      if (channel === 'microphone') {
+        return {
+          code: 'microphone_unavailable',
+          message: 'Mikrofon cihazi bulunamadi veya devre disi.'
+        }
+      }
+
+      return {
+        code: 'device_not_found',
+        message: 'Istenen ses kaynagi bulunamadi. Kaynak degismis olabilir.'
+      }
+    }
+
+    if (error.name === 'NotReadableError') {
+      return {
+        code: 'device_busy',
+        message: 'Ses kaynagi su an kullanilamiyor. Baska uygulama kaynagi kilitliyor olabilir.'
+      }
+    }
+
+    if (error.name === 'AbortError') {
+      return {
+        code: 'stream_aborted',
+        message: 'Ses akisi beklenmedik sekilde kesildi.'
+      }
+    }
+  }
+
+  return {
+    code: 'audio_capture_error',
+    message: error instanceof Error ? error.message : 'Bilinmeyen ses yakalama hatasi.'
+  }
+}
+
 class ChannelCapture {
   private readonly speaker: Speaker
   private audioContext: AudioContext | null = null
   private mediaStream: MediaStream | null = null
   private sourceNode: MediaStreamAudioSourceNode | null = null
   private workletNode: AudioWorkletNode | null = null
+  private silentSinkNode: GainNode | null = null
   private workletBlobUrl: string | null = null
   private trackEndedListener: (() => void) | null = null
   private audioTrack: MediaStreamTrack | null = null
@@ -112,6 +191,26 @@ class ChannelCapture {
     await this.startWithStream(stream, options)
   }
 
+  async startSystemViaDisplayPicker(options: ChannelStartOptions): Promise<void> {
+    await this.stop()
+
+    const stream = await navigator.mediaDevices.getDisplayMedia({
+      audio: true,
+      video: true
+    })
+
+    if (stream.getAudioTracks().length === 0) {
+      stream.getTracks().forEach((track) => track.stop())
+      throw new DOMException(
+        'Display picker seciminden sistem ses izi gelmedi.',
+        'NotFoundError'
+      )
+    }
+
+    stream.getVideoTracks().forEach((track) => track.stop())
+    await this.startWithStream(stream, options)
+  }
+
   async stop(): Promise<void> {
     this.running = false
 
@@ -124,6 +223,11 @@ class ChannelCapture {
     if (this.workletNode) {
       this.workletNode.disconnect()
       this.workletNode = null
+    }
+
+    if (this.silentSinkNode) {
+      this.silentSinkNode.disconnect()
+      this.silentSinkNode = null
     }
 
     if (this.sourceNode) {
@@ -152,6 +256,10 @@ class ChannelCapture {
     this.running = true
 
     this.audioTrack = stream.getAudioTracks()[0] || null
+    if (!this.audioTrack) {
+      throw new DOMException('Audio track bulunamadi.', 'NotFoundError')
+    }
+
     if (this.audioTrack && options.onTrackEnded) {
       this.trackEndedListener = () => {
         this.running = false
@@ -161,6 +269,13 @@ class ChannelCapture {
     }
 
     this.audioContext = new AudioContext({ sampleRate: 16000 })
+    if (this.audioContext.state !== 'running') {
+      try {
+        await this.audioContext.resume()
+      } catch {
+        // resume may fail without user gesture; audio pipeline can still continue if already running.
+      }
+    }
     this.sourceNode = this.audioContext.createMediaStreamSource(stream)
 
     this.workletBlobUrl = this.createWorkletBlob()
@@ -182,6 +297,10 @@ class ChannelCapture {
     }
 
     this.sourceNode.connect(this.workletNode)
+    this.silentSinkNode = this.audioContext.createGain()
+    this.silentSinkNode.gain.value = 0
+    this.workletNode.connect(this.silentSinkNode)
+    this.silentSinkNode.connect(this.audioContext.destination)
   }
 
   private createWorkletBlob(): string {
@@ -246,6 +365,9 @@ export class MeetingAudioCapture {
   private readonly selfChannel = new ChannelCapture('self')
   private readonly reconnectBackoffMs = [1000, 2000, 4000]
 
+  private strategy: SystemAudioStrategy = 'auto_live'
+  private captureMicrophone = true
+  private liveSwitchEnabled = true
   private systemSourceId = ''
   private systemSourceName = ''
   private onChunk: OnChunk | null = null
@@ -255,6 +377,11 @@ export class MeetingAudioCapture {
   private diagnosticsTimer: number | null = null
   private reconnecting = false
   private stopped = true
+  private healthSwitchInFlight = false
+  private lastSourceSwitchMs = 0
+  private lastRemoteActiveMs = 0
+  private remoteLevelHistory: Array<{ tsMs: number; rms: number }> = []
+  private sourceScores = new Map<string, number>()
 
   private diagnostics: CaptureDiagnosticsEvent = {
     tsMs: Date.now(),
@@ -265,7 +392,10 @@ export class MeetingAudioCapture {
     reconnectState: 'stable',
     reconnectAttempt: 0,
     activeSourceId: '',
-    activeSourceName: ''
+    activeSourceName: '',
+    sourceSwitchCount: 0,
+    remoteSilenceMs: 0,
+    sourceHealth: 'healthy'
   }
 
   private readonly handleDeviceChange = (): void => {
@@ -280,34 +410,123 @@ export class MeetingAudioCapture {
     this.onDiagnostics = options.onDiagnostics || null
     this.onSourceChanged = options.onSourceChanged || null
     this.onFatalError = options.onFatalError || null
+    this.captureMicrophone = options.captureMicrophone !== false
+    this.strategy = options.strategy || (options.systemSourceId ? 'manual' : 'auto_live')
+    this.liveSwitchEnabled = this.strategy === 'auto_live' && !options.systemSourceId
     this.reconnecting = false
     this.stopped = false
+    this.healthSwitchInFlight = false
+    this.remoteLevelHistory = []
+    this.sourceScores.clear()
+    this.lastRemoteActiveMs = Date.now()
+    this.lastSourceSwitchMs = 0
 
     const sources = await window.api.getAudioSources()
     const candidates = rankAudioSources(sources, options.systemSourceId)
     if (candidates.length === 0) {
+      this.setCaptureError('device_not_found', 'System audio source bulunamadi. Ekran yakalama iznini kontrol edin.')
       throw new Error('System audio source bulunamadi. Ekran yakalama iznini kontrol edin.')
     }
 
     let selectedSource: AudioSourceItem | null = null
+    let selectedScore = 0
+    let lastOpenError: { code: CaptureErrorCode; message: string } | null = null
+    let preferPickerFallback = false
+
+    if (this.strategy === 'picker_each_start' && !options.systemSourceId) {
+      try {
+        await this.remoteChannel.startSystemViaDisplayPicker(this.buildRemoteOptions())
+        selectedSource = {
+          id: 'display-media:auto',
+          name: 'Display Media Picker'
+        }
+        selectedScore = LIVE_SWITCH_MIN_SCORE
+        this.clearCaptureError()
+      } catch (pickerError) {
+        const pickerClassified = classifyCaptureError(pickerError, 'system')
+        this.setCaptureError(pickerClassified.code, pickerClassified.message)
+        throw new Error(`[${pickerClassified.code}] ${pickerClassified.message}`)
+      }
+    }
+
+    // Auto mode: probe candidate screens and prefer the source with strongest audio RMS.
+    if (!options.systemSourceId && this.strategy === 'auto_live' && !selectedSource) {
+      const probeResults: Array<{ source: AudioSourceItem; peakRms: number; score: number }> = []
+      for (const candidate of candidates) {
+        const probed = await this.probeSystemSource(candidate)
+        if (probed.error) {
+          lastOpenError = probed.error
+          this.setCaptureError(probed.error.code, probed.error.message)
+        }
+        if (probed.opened) {
+          const score = probed.peakRms
+          probeResults.push({ source: candidate, peakRms: probed.peakRms, score })
+          this.sourceScores.set(candidate.id, score)
+        }
+      }
+      this.diagnostics.candidateScores = probeResults.map((item) => ({
+        id: item.source.id,
+        peakRms: Number(item.peakRms.toFixed(2)),
+        score: Number(item.score.toFixed(2))
+      }))
+
+      const bestByRms = probeResults.sort((a, b) => b.peakRms - a.peakRms)[0]
+      if (bestByRms && bestByRms.peakRms >= AUTO_SOURCE_ACTIVE_RMS_THRESHOLD) {
+        try {
+          await this.remoteChannel.startSystem(bestByRms.source.id, this.buildRemoteOptions())
+          this.clearCaptureError()
+          selectedSource = bestByRms.source
+          selectedScore = bestByRms.score
+        } catch (error) {
+          lastOpenError = classifyCaptureError(error, 'system')
+          this.setCaptureError(lastOpenError.code, lastOpenError.message)
+        }
+      } else if (probeResults.length > 0) {
+        // All candidates opened but had near-zero audio; force picker fallback for explicit selection.
+        preferPickerFallback = true
+      }
+    }
+
     for (const candidate of candidates) {
+      if (preferPickerFallback) break
+      if (selectedSource) break
       try {
         await this.remoteChannel.startSystem(candidate.id, this.buildRemoteOptions())
+        this.clearCaptureError()
         selectedSource = candidate
+        selectedScore = this.sourceScores.get(candidate.id) || 0
         break
-      } catch {
+      } catch (error) {
+        lastOpenError = classifyCaptureError(error, 'system')
+        this.setCaptureError(lastOpenError.code, lastOpenError.message)
         // Try next source candidate until one becomes capturable.
       }
     }
 
     if (!selectedSource) {
-      throw new Error(
-        'Sistem ses kaynagi acilamadi. Ekran paylasim/kayit izinlerini kontrol edip tekrar deneyin.'
-      )
+      try {
+        // Fallback: Let the user pick a capturable display source directly.
+        await this.remoteChannel.startSystemViaDisplayPicker(this.buildRemoteOptions())
+        selectedSource = {
+          id: 'display-media:auto',
+          name: 'Display Media Picker'
+        }
+        selectedScore = LIVE_SWITCH_MIN_SCORE
+        this.clearCaptureError()
+      } catch (pickerError) {
+        const pickerClassified = classifyCaptureError(pickerError, 'system')
+        this.setCaptureError(pickerClassified.code, pickerClassified.message)
+        const detail = lastOpenError ? ` (${lastOpenError.code}) ${lastOpenError.message}` : ''
+        throw new Error(
+          `Sistem ses kaynagi acilamadi.${detail} Picker fallback da basarisiz: [${pickerClassified.code}] ${pickerClassified.message}`
+        )
+      }
     }
 
     this.systemSourceId = selectedSource.id
     this.systemSourceName = selectedSource.name || options.systemSourceName || selectedSource.id
+    this.sourceScores.set(this.systemSourceId, selectedScore)
+    this.lastSourceSwitchMs = Date.now()
     if (options.systemSourceId !== selectedSource.id) {
       this.onSourceChanged?.(selectedSource)
     }
@@ -321,24 +540,51 @@ export class MeetingAudioCapture {
       reconnectState: 'stable',
       reconnectAttempt: 0,
       activeSourceId: this.systemSourceId,
-      activeSourceName: this.systemSourceName
+      activeSourceName: this.systemSourceName,
+      sourceSwitchCount: 0,
+      remoteSilenceMs: 0,
+      sourceHealth: 'healthy',
+      lastSwitchReason: options.systemSourceId ? 'manual_override' : undefined,
+      candidateScores: this.diagnostics.candidateScores,
+      lastErrorCode: undefined,
+      lastErrorMessage: undefined
     }
 
     try {
-      await this.selfChannel.startMicrophone(this.buildSelfOptions())
+      if (this.captureMicrophone) {
+        try {
+          await this.selfChannel.startMicrophone(this.buildSelfOptions())
+        } catch (micError) {
+          // Do not fail the whole session for microphone problems when remote/system audio is active.
+          const micClassified = classifyCaptureError(micError, 'microphone')
+          this.setCaptureError(
+            micClassified.code,
+            `Mikrofon acilamadi, remote-only devam: ${micClassified.message}`
+          )
+        }
+      } else {
+        this.diagnostics.selfRms = 0
+      }
 
       navigator.mediaDevices.addEventListener('devicechange', this.handleDeviceChange)
       this.startDiagnosticsTimer()
       this.emitDiagnostics(true)
     } catch (error) {
+      const classified = classifyCaptureError(error, 'system')
+      this.setCaptureError(classified.code, classified.message)
       await this.stop()
-      throw error
+      throw new Error(`[${classified.code}] ${classified.message}`)
     }
   }
 
   async stop(): Promise<void> {
     this.stopped = true
     this.reconnecting = false
+    this.healthSwitchInFlight = false
+    this.remoteLevelHistory = []
+    this.sourceScores.clear()
+    this.lastRemoteActiveMs = 0
+    this.lastSourceSwitchMs = 0
 
     if (this.diagnosticsTimer !== null) {
       window.clearInterval(this.diagnosticsTimer)
@@ -359,6 +605,7 @@ export class MeetingAudioCapture {
       onChunk: (chunk) => this.forwardChunk(chunk),
       onLevel: (rms) => {
         this.diagnostics.remoteRms = rms
+        this.recordRemoteLevel(rms)
       },
       onTrackEnded: () => {
         void this.handleRemoteTrackEnded()
@@ -394,6 +641,7 @@ export class MeetingAudioCapture {
     }
 
     this.diagnosticsTimer = window.setInterval(() => {
+      this.evaluateRemoteHealth()
       this.emitDiagnostics(false)
     }, 250)
   }
@@ -414,6 +662,23 @@ export class MeetingAudioCapture {
     this.emitDiagnostics(true)
   }
 
+  private setCaptureError(code: CaptureErrorCode, message: string): void {
+    this.diagnostics.lastErrorCode = code
+    this.diagnostics.lastErrorMessage = message
+    if (code !== 'microphone_unavailable') {
+      this.diagnostics.sourceHealth = 'suspect'
+    }
+    this.emitDiagnostics(true)
+  }
+
+  private clearCaptureError(): void {
+    this.diagnostics.lastErrorCode = undefined
+    this.diagnostics.lastErrorMessage = undefined
+    if (!this.healthSwitchInFlight) {
+      this.diagnostics.sourceHealth = 'healthy'
+    }
+  }
+
   private async handleRemoteTrackEnded(): Promise<void> {
     if (this.stopped || this.reconnecting) return
 
@@ -431,6 +696,9 @@ export class MeetingAudioCapture {
           this.systemSourceName
         )
         if (recovered) {
+          this.diagnostics.lastSwitchReason = 'devicechange'
+          this.diagnostics.sourceHealth = 'healthy'
+          this.clearCaptureError()
           this.setReconnectState('stable', 0)
           return
         }
@@ -445,6 +713,11 @@ export class MeetingAudioCapture {
         if (switched) {
           this.systemSourceId = fallback.id
           this.systemSourceName = fallback.name
+          this.diagnostics.sourceSwitchCount = (this.diagnostics.sourceSwitchCount || 0) + 1
+          this.lastSourceSwitchMs = Date.now()
+          this.diagnostics.lastSwitchReason = 'devicechange'
+          this.diagnostics.sourceHealth = 'healthy'
+          this.clearCaptureError()
           this.onSourceChanged?.(fallback)
           this.setReconnectState('stable', 0)
           return
@@ -452,6 +725,11 @@ export class MeetingAudioCapture {
       }
 
       this.setReconnectState('failed', this.reconnectBackoffMs.length)
+      this.diagnostics.sourceHealth = 'suspect'
+      this.setCaptureError(
+        'device_not_found',
+        'System audio source reconnect failed. Select another source and restart the session.'
+      )
       this.onFatalError?.(
         new Error(
           'System audio source reconnect failed. Select another source and restart the session.'
@@ -467,14 +745,174 @@ export class MeetingAudioCapture {
       await this.remoteChannel.startSystem(sourceId, this.buildRemoteOptions())
       this.diagnostics.activeSourceId = sourceId
       this.diagnostics.activeSourceName = sourceName
+      this.remoteLevelHistory = []
+      this.lastRemoteActiveMs = Date.now()
+      this.sourceScores.set(sourceId, Math.max(this.sourceScores.get(sourceId) || 0, LIVE_SWITCH_MIN_SCORE))
+      this.clearCaptureError()
       this.emitDiagnostics(true)
       return true
-    } catch {
+    } catch (error) {
+      const classified = classifyCaptureError(error, 'system')
+      this.setCaptureError(classified.code, classified.message)
       return false
     }
   }
 
   private async wait(ms: number): Promise<void> {
     await new Promise((resolve) => window.setTimeout(resolve, ms))
+  }
+
+  async redetectAudioSource(): Promise<boolean> {
+    return this.maybeSwitchSourceByHealth('manual_override', true)
+  }
+
+  private recordRemoteLevel(rms: number): void {
+    const now = Date.now()
+    this.remoteLevelHistory.push({ tsMs: now, rms })
+    const minTs = now - REMOTE_HEALTH_WINDOW_MS
+    this.remoteLevelHistory = this.remoteLevelHistory.filter((item) => item.tsMs >= minTs)
+    if (rms >= AUTO_SOURCE_ACTIVE_RMS_THRESHOLD) {
+      this.lastRemoteActiveMs = now
+    }
+  }
+
+  private currentRemoteScore(nowMs = Date.now()): number {
+    const minTs = nowMs - REMOTE_HEALTH_WINDOW_MS
+    const recent = this.remoteLevelHistory
+      .filter((item) => item.tsMs >= minTs)
+      .map((item) => item.rms)
+    return average(recent)
+  }
+
+  private evaluateRemoteHealth(): void {
+    if (this.stopped) return
+
+    const now = Date.now()
+    const silenceMs = Math.max(0, now - this.lastRemoteActiveMs)
+    this.diagnostics.remoteSilenceMs = silenceMs
+
+    if (this.healthSwitchInFlight) {
+      this.diagnostics.sourceHealth = 'switching'
+      return
+    }
+
+    this.diagnostics.sourceHealth = silenceMs >= REMOTE_SILENCE_SUSPECT_MS ? 'suspect' : 'healthy'
+
+    const cooldownReady = now - this.lastSourceSwitchMs >= LIVE_SWITCH_COOLDOWN_MS
+    const shouldSwitch =
+      this.liveSwitchEnabled &&
+      !this.reconnecting &&
+      !this.healthSwitchInFlight &&
+      cooldownReady &&
+      silenceMs >= REMOTE_SILENCE_SUSPECT_MS
+
+    if (shouldSwitch) {
+      void this.maybeSwitchSourceByHealth('low_rms')
+    }
+  }
+
+  private async maybeSwitchSourceByHealth(
+    reason: NonNullable<CaptureDiagnosticsEvent['lastSwitchReason']>,
+    force = false
+  ): Promise<boolean> {
+    if (this.healthSwitchInFlight || this.stopped) return false
+    if (!force && !this.liveSwitchEnabled) return false
+
+    this.healthSwitchInFlight = true
+    this.diagnostics.sourceHealth = 'switching'
+    this.diagnostics.lastSwitchReason = reason
+    this.emitDiagnostics(true)
+
+    try {
+      const sources = await window.api.getAudioSources()
+      const candidates = rankAudioSources(sources)
+      if (candidates.length === 0) {
+        return false
+      }
+
+      const scores: SourceScore[] = []
+      for (const candidate of candidates) {
+        const probed = await this.probeSystemSource(candidate)
+        if (probed.opened) {
+          const score = probed.peakRms
+          scores.push({ id: candidate.id, peakRms: probed.peakRms, score })
+          this.sourceScores.set(candidate.id, score)
+        }
+      }
+
+      this.diagnostics.candidateScores = scores.map((item) => ({
+        id: item.id,
+        peakRms: Number(item.peakRms.toFixed(2)),
+        score: Number(item.score.toFixed(2))
+      }))
+      if (scores.length === 0) {
+        return false
+      }
+
+      scores.sort((a, b) => b.score - a.score)
+      const best = scores[0]
+      const currentScore = Math.max(this.sourceScores.get(this.systemSourceId) || 0, this.currentRemoteScore())
+      const minimumTarget = Math.max(LIVE_SWITCH_MIN_SCORE, currentScore * LIVE_SWITCH_RATIO)
+      const passScore = force ? best.score >= AUTO_SOURCE_ACTIVE_RMS_THRESHOLD : best.score >= minimumTarget
+
+      if (!passScore || best.id === this.systemSourceId) {
+        return false
+      }
+
+      const nextSource = sources.find((item) => item.id === best.id)
+      if (!nextSource) return false
+
+      const switched = await this.trySwitchRemoteSource(nextSource.id, nextSource.name)
+      if (!switched) return false
+
+      this.systemSourceId = nextSource.id
+      this.systemSourceName = nextSource.name
+      this.diagnostics.activeSourceId = nextSource.id
+      this.diagnostics.activeSourceName = nextSource.name
+      this.diagnostics.sourceSwitchCount = (this.diagnostics.sourceSwitchCount || 0) + 1
+      this.diagnostics.lastSwitchReason = reason
+      this.diagnostics.sourceHealth = 'healthy'
+      this.lastSourceSwitchMs = Date.now()
+      this.onSourceChanged?.(nextSource)
+      return true
+    } finally {
+      this.healthSwitchInFlight = false
+      if (!this.stopped && this.diagnostics.sourceHealth !== 'healthy') {
+        this.diagnostics.sourceHealth = 'suspect'
+      }
+      this.emitDiagnostics(true)
+    }
+  }
+
+  private async probeSystemSource(candidate: AudioSourceItem): Promise<{
+    opened: boolean
+    peakRms: number
+    error?: { code: CaptureErrorCode; message: string }
+  }> {
+    const probeChannel = new ChannelCapture('remote')
+    let peakRms = 0
+    try {
+      await probeChannel.startSystem(candidate.id, {
+        onChunk: () => {
+          // Probe mode: don't forward chunks until source selection is finalized.
+        },
+        onLevel: (rms) => {
+          if (rms > peakRms) {
+            peakRms = rms
+          }
+        }
+      })
+
+      await this.wait(AUTO_SOURCE_PROBE_MS)
+      return { opened: true, peakRms }
+    } catch (error) {
+      return {
+        opened: false,
+        peakRms,
+        error: classifyCaptureError(error, 'system')
+      }
+    } finally {
+      await probeChannel.stop()
+    }
   }
 }
