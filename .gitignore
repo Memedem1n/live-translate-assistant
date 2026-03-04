@@ -8,6 +8,7 @@ dist/
 *.tmp
 artifacts/
 .venv311/
+.venvtrain311/
 benchmark/reports/
 __pycache__/
 scripts/__pycache__/

@@ -5,7 +5,7 @@ LiveTranslate Assistant is a local-first Windows desktop copilot for live meetin
 ## What V1 does
 
 - Captures live conversation context (remote + self tracks)
-- Produces English transcript and Turkish translation
+- Produces multi-language transcript (TR/EN auto) and Turkish translation
 - Generates short context-aware reply suggestions in both EN and TR
 - Runs with local models by default (Ollama + faster-whisper)
 - Uses dual-window UI: control panel + transparent overlay
@@ -19,11 +19,13 @@ LiveTranslate Assistant is a local-first Windows desktop copilot for live meetin
    - Node.js 20+
 2. Install runtime dependencies (Windows, recommended stable path):
    - `npm run runtime:setup`
-3. Pull local answer model set (full profile):
+3. Verify CUDA/runtime health (recommended):
+   - `npm run runtime:probe`
+4. Pull local answer model set (full profile):
    - `npm run models:pull`
-4. Install app dependencies:
+5. Install app dependencies:
    - `npm install`
-5. Run dev app:
+6. Run dev app:
    - `npm run dev`
 
 ## Model footprint (selected demo package)
@@ -47,6 +49,25 @@ LiveTranslate Assistant is a local-first Windows desktop copilot for live meetin
 4. End-to-end demo pipeline (steps 1-3 together):
    - `npm run demo:pipeline`
 5. Check JSON reports in `benchmark/reports/`.
+6. Latency gate decisions should use `summary.warm_gate`.
+
+## Personalization pipeline (RAG + LoRA prep)
+
+1. Build web corpus:
+   - `npm run corpus:sync`
+2. Build interview glossary:
+   - `npm run glossary:build`
+3. Build train/valid fine-tune dataset:
+   - `npm run finetune:dataset`
+4. Prepare local LoRA training environment (separate venv):
+   - `npm run finetune:setup-env`
+5. Check local LoRA training environment:
+   - `npm run finetune:check-env`
+6. Prepare/run LoRA training command template:
+   - `npm run finetune:prepare-lora`
+   - optional smoke run: `npm run finetune:prepare-lora:smoke`
+7. Package adapter for Ollama (after training):
+   - `npm run finetune:package-ollama`
 
 ## History and export
 
@@ -92,6 +113,7 @@ LiveTranslate Assistant is a local-first Windows desktop copilot for live meetin
 - `docs/PERFORMANCE_PLAN.md`
 - `docs/MODEL_SETUP_TR.md`
 - `docs/EOD_2026-03-03_TR.md`
+- `docs/EOD_2026-03-04_TR.md`
 - `docs/PRIVACY_TR.md`
 - `docs/CODE_SIGNING_TR.md`
 - `docs/RELEASE_STRATEGY.md`

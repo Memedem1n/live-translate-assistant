@@ -13,6 +13,14 @@ extraResources:
     to: scripts
     filter:
       - stt_worker.py
+      - extract_profile_text.py
+      - sync_web_corpus.py
+      - build_glossary_lexicon.py
+  - from: configs
+    to: configs
+    filter:
+      - web_corpus_sources.yaml
+      - glossary_seed.json
 directories:
   output: dist
 win:

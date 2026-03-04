@@ -1,37 +1,61 @@
-﻿# Last Session - 2026-03-02
+# Last Session - 2026-03-04
 
 ## Completed Today
 
-- Bootstrapped LiveTranslate Assistant in Electron + React + TypeScript.
-- Implemented dual-window app shell:
-  - Control window
-  - Transparent overlay window
-- Added IPC contract layer and settings manager.
-- Added local assist pipeline for Ollama with structured JSON output:
-  - TR translation
-  - EN reply suggestion
-  - TR reply suggestion
-- Added Python STT worker skeleton (`faster-whisper`) and Node bridge.
-- Added renderer store, audio capture service, control/overlay UI.
-- Added project documentation bundle:
-  - ARCHITECTURE.md
-  - API_SPEC.md
-  - ROADMAP.md
-  - PERFORMANCE_PLAN.md
-  - PRIVACY_TR.md
-  - UI_GUIDELINES_TR.md
-- Installed dependencies and passed TypeScript typecheck.
+- Stabilized STT runtime lifecycle and diagnostics flow:
+  - runtime mode: `auto | cuda | cpu`
+  - eager worker warmup before ready
+  - cuda retry + automatic cpu fallback
+  - renderer runtime status visibility
+- Extended control and overlay behavior for more reliable live usage:
+  - runtime/degraded state signals in UI
+  - manual assist generation path
+  - transcript/assist flow improvements in interview mode
+- Added personalization infrastructure:
+  - profile source ingestion (`cv`, `github`, `linkedin`, `job_desc`, `note`, `knowledge_base`, `web_corpus`, `glossary`)
+  - context preview + reindex path
+  - profile memory orchestration and tests
+- Added corpus/glossary/finetune preparation scripts:
+  - `scripts/sync_web_corpus.py`
+  - `scripts/build_glossary_lexicon.py`
+  - `scripts/build_finetune_dataset.py`
+  - `scripts/train_lora_interview.py`
+  - `scripts/check_train_env.py`
+  - `scripts/package_lora_for_ollama.py`
+- Added train environment split to avoid runtime/train dependency conflicts:
+  - `scripts/setup_train_env.ps1`
+  - `scripts/run_train_python.ps1`
+  - new npm scripts under `finetune:*`
+- Improved dataset builder constraints:
+  - source-mix enforcement toggle (`--enforce-source-mix`, `--no-enforce-source-mix`)
+  - glossary ratio balancing and overflow trimming
+- Disk cleanup performed:
+  - removed build/artifact leftovers
+  - removed unused local models (`qwen2.5:3b`, `qwen2.5:7b`)
+  - kept active set: `qwen2.5:14b` + `large-v3`
 
-## Current Status
+## Validation Status
 
-- Project compiles at type level (`npm run typecheck` passed).
-- Runtime validation with real meeting audio still pending.
-- STT quality and latency tuning still pending.
+- `npm run typecheck` passed
+- `npm run test` passed
+- smoke corpus/glossary/dataset flow passed
+- `finetune:prepare-lora` template generation works and blocks correctly when dataset is below threshold
+- `finetune:check-env` currently reports missing train dependencies in `.venvtrain311` (expected until full train env bootstrap is run)
+
+## Current Footprint
+
+- project dir: ~2.86 GB
+- ollama models: ~8.37 GB
+- huggingface cache: ~2.90 GB
+- active model/cache set significantly reduced for day-end stability
 
 ## Next Session Priority
 
-1. Run app with real audio routes and validate transcript quality.
-2. Tune STT worker thresholds (`MIN_AUDIO_MS`, `SILENCE_MS`, `VOICE_RMS_THRESHOLD`).
-3. Tune prompt/model for strict JSON reliability and faster first token.
-4. Add encrypted opt-in history persistence.
-5. Add benchmark scripts and baseline p50/p95 metrics.
+1. Bootstrap train environment completely:
+   - `npm run finetune:setup-env`
+   - `npm run finetune:check-env` should return `ok=true`
+2. Run LoRA smoke attempts:
+   - `npm run finetune:prepare-lora:smoke`
+   - inspect `artifacts/finetune/training_attempts.json`
+3. If smoke succeeds, move to full training gate with selected profile sequence.
+4. After training path is stable, run D-disk migration phase (project + model/cache path strategy).

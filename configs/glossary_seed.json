@@ -1,0 +1,177 @@
+[
+  {
+    "term": "Latency",
+    "definition_en": "Time required for a request to travel through the system and return a response.",
+    "definition_tr": "Bir istegin sistemde islenip yanit olarak geri donmesi icin gecen sure.",
+    "tags": ["performance", "backend"],
+    "source": "seed"
+  },
+  {
+    "term": "Throughput",
+    "definition_en": "Amount of work a system can process in a given unit of time.",
+    "definition_tr": "Bir sistemin belirli bir zamanda isleyebildigi is miktari.",
+    "tags": ["performance", "backend"],
+    "source": "seed"
+  },
+  {
+    "term": "Scalability",
+    "definition_en": "Ability of a system to handle increased load by adding resources efficiently.",
+    "definition_tr": "Sistemin artan yuku kaynak ekleyerek verimli bicimde tasiyabilme yetenegi.",
+    "tags": ["system_design"],
+    "source": "seed"
+  },
+  {
+    "term": "Idempotency",
+    "definition_en": "Property where repeating the same operation yields the same effect as running it once.",
+    "definition_tr": "Ayni islemi tekrar etmenin, tek sefer yapilmasiyla ayni etkiyi uretmesi ozelligi.",
+    "tags": ["api", "reliability"],
+    "source": "seed"
+  },
+  {
+    "term": "Eventual Consistency",
+    "definition_en": "Distributed consistency model where replicas converge to the same state over time.",
+    "definition_tr": "Dagitik sistemlerde kopyalarin zamanla ayni duruma yakinsadigi tutarlilik modeli.",
+    "tags": ["distributed_systems"],
+    "source": "seed"
+  },
+  {
+    "term": "CAP Theorem",
+    "definition_en": "In a distributed system, only two of consistency, availability, and partition tolerance can be fully guaranteed at once.",
+    "definition_tr": "Dagitik sistemlerde consistency, availability ve partition tolerance ozelliklerinden ayni anda en fazla ikisi tam garanti edilebilir.",
+    "tags": ["distributed_systems"],
+    "source": "seed"
+  },
+  {
+    "term": "Circuit Breaker",
+    "definition_en": "Pattern that stops repeated calls to a failing dependency to avoid cascading failures.",
+    "definition_tr": "Basarisiz bir bagimliliga tekrarli cagriyi keserek zincirleme hatalari onleyen desen.",
+    "tags": ["reliability", "microservices"],
+    "source": "seed"
+  },
+  {
+    "term": "Backpressure",
+    "definition_en": "Mechanism to control producer speed when consumers cannot keep up.",
+    "definition_tr": "Tuketici hizina yetisilemediginde uretici hizini kontrol eden mekanizma.",
+    "tags": ["streaming", "reliability"],
+    "source": "seed"
+  },
+  {
+    "term": "Sharding",
+    "definition_en": "Horizontal partitioning of data across multiple database nodes.",
+    "definition_tr": "Verinin birden fazla veritabani dugumu arasinda yatay olarak bolunmesi.",
+    "tags": ["database", "scalability"],
+    "source": "seed"
+  },
+  {
+    "term": "Replication",
+    "definition_en": "Maintaining copies of data across nodes for availability and read scaling.",
+    "definition_tr": "Erisilebilirlik ve okuma olceklemesi icin verinin farkli dugumlerde kopyalarini tutma.",
+    "tags": ["database", "availability"],
+    "source": "seed"
+  },
+  {
+    "term": "Indexing",
+    "definition_en": "Data structure strategy used by databases to speed up query execution.",
+    "definition_tr": "Sorgulari hizlandirmak icin veritabanlarinin kullandigi veri yapisi stratejisi.",
+    "tags": ["database"],
+    "source": "seed"
+  },
+  {
+    "term": "ACID",
+    "definition_en": "Transaction guarantees: Atomicity, Consistency, Isolation, Durability.",
+    "definition_tr": "Transaction garantileri: Atomicity, Consistency, Isolation, Durability.",
+    "tags": ["database", "transactions"],
+    "source": "seed"
+  },
+  {
+    "term": "CQRS",
+    "definition_en": "Architectural pattern that separates read and write models for better scaling and clarity.",
+    "definition_tr": "Okuma ve yazma modellerini ayirarak olcekleme ve netlik saglayan mimari desen.",
+    "tags": ["architecture"],
+    "source": "seed"
+  },
+  {
+    "term": "Saga Pattern",
+    "definition_en": "Approach for managing distributed transactions through a series of local transactions and compensations.",
+    "definition_tr": "Dagitik transactionlari yerel transaction adimlari ve telafi islemleriyle yoneten yaklasim.",
+    "tags": ["microservices", "transactions"],
+    "source": "seed"
+  },
+  {
+    "term": "Tokenization",
+    "definition_en": "Process of splitting text into units used by NLP models.",
+    "definition_tr": "Metni NLP modellerinin kullandigi parcalara ayirma sureci.",
+    "tags": ["nlp"],
+    "source": "seed"
+  },
+  {
+    "term": "Embedding",
+    "definition_en": "Dense vector representation of text or objects capturing semantic similarity.",
+    "definition_tr": "Metin veya nesnelerin anlamsal benzerligini tasiyan yogun vektor temsili.",
+    "tags": ["nlp", "llm"],
+    "source": "seed"
+  },
+  {
+    "term": "Transformer",
+    "definition_en": "Neural architecture based on attention mechanisms, dominant in modern NLP.",
+    "definition_tr": "Dikkat mekanizmasina dayali, modern NLP'de baskin sinir agi mimarisi.",
+    "tags": ["nlp", "llm"],
+    "source": "seed"
+  },
+  {
+    "term": "Attention",
+    "definition_en": "Mechanism that lets models focus on relevant input parts while processing sequences.",
+    "definition_tr": "Modelin dizi islerken ilgili girdilere odaklanmasini saglayan mekanizma.",
+    "tags": ["nlp", "llm"],
+    "source": "seed"
+  },
+  {
+    "term": "Fine-tuning",
+    "definition_en": "Training a pretrained model on task-specific data to adapt behavior.",
+    "definition_tr": "Onceden egitilmis modeli goreve ozel verilerle yeniden egiterek davranisini uyarlama.",
+    "tags": ["llm", "mlops"],
+    "source": "seed"
+  },
+  {
+    "term": "LoRA",
+    "definition_en": "Parameter-efficient fine-tuning method using low-rank adaptation matrices.",
+    "definition_tr": "Dusuk-rank uyarlama matrisleriyle parametre-verimli fine-tuning yontemi.",
+    "tags": ["llm", "fine_tuning"],
+    "source": "seed"
+  },
+  {
+    "term": "RAG",
+    "definition_en": "Retrieval-Augmented Generation: injecting retrieved knowledge into LLM responses.",
+    "definition_tr": "Retrieval-Augmented Generation: getirilen bilginin LLM cevabina enjekte edilmesi.",
+    "tags": ["llm", "retrieval"],
+    "source": "seed"
+  },
+  {
+    "term": "Vector Database",
+    "definition_en": "Database optimized for storing and searching embeddings by vector similarity.",
+    "definition_tr": "Embedding verilerini vektor benzerligine gore saklayip aramaya optimize veritabani.",
+    "tags": ["retrieval", "database"],
+    "source": "seed"
+  },
+  {
+    "term": "Prompt Injection",
+    "definition_en": "Adversarial prompt pattern that attempts to override system instructions.",
+    "definition_tr": "Sistem talimatlarini gecersiz kilmaya calisan saldirgan prompt deseni.",
+    "tags": ["llm", "security"],
+    "source": "seed"
+  },
+  {
+    "term": "Hallucination",
+    "definition_en": "Model behavior where generated output is plausible but factually incorrect.",
+    "definition_tr": "Modelin makul gorunen fakat gercekte yanlis bilgi uretmesi durumu.",
+    "tags": ["llm", "quality"],
+    "source": "seed"
+  },
+  {
+    "term": "First Token Latency",
+    "definition_en": "Delay between request submission and arrival of the first generated token.",
+    "definition_tr": "Istek gonderimi ile ilk token'in gelmesi arasindaki gecikme.",
+    "tags": ["llm", "performance"],
+    "source": "seed"
+  }
+]

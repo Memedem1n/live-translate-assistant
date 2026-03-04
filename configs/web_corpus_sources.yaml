@@ -1,0 +1,160 @@
+{
+  "categories": [
+    {
+      "name": "system_design",
+      "queries": [
+        "system design interview questions scalability tradeoffs",
+        "design url shortener interview discussion",
+        "design news feed interview architecture"
+      ],
+      "seed_urls": [
+        "https://github.com/donnemartin/system-design-primer",
+        "https://bytebytego.com/",
+        "https://martinfowler.com/architecture/"
+      ]
+    },
+    {
+      "name": "distributed_systems",
+      "queries": [
+        "distributed systems interview consistency availability partition tolerance",
+        "event driven architecture interview questions",
+        "idempotency retries distributed systems interview"
+      ],
+      "seed_urls": [
+        "https://aws.amazon.com/builders-library/",
+        "https://microservices.io/patterns/index.html",
+        "https://martinfowler.com/tags/distributed%20systems.html"
+      ]
+    },
+    {
+      "name": "backend_api",
+      "queries": [
+        "backend API design interview best practices",
+        "rest vs grpc interview discussion backend",
+        "api versioning interview questions"
+      ],
+      "seed_urls": [
+        "https://learn.microsoft.com/en-us/azure/architecture/best-practices/api-design",
+        "https://cloud.google.com/apis/design",
+        "https://swagger.io/resources/articles/best-practices-in-api-design/"
+      ]
+    },
+    {
+      "name": "database_engineering",
+      "queries": [
+        "database interview indexing sharding replication",
+        "transaction isolation levels interview",
+        "sql optimization interview questions"
+      ],
+      "seed_urls": [
+        "https://use-the-index-luke.com/",
+        "https://www.postgresql.org/docs/current/indexes-intro.html",
+        "https://www.mongodb.com/docs/manual/sharding/"
+      ]
+    },
+    {
+      "name": "observability_reliability",
+      "queries": [
+        "site reliability interview questions slis slos error budgets",
+        "observability logging tracing metrics interview",
+        "incident response postmortem interview answer"
+      ],
+      "seed_urls": [
+        "https://sre.google/sre-book/table-of-contents/",
+        "https://opentelemetry.io/docs/",
+        "https://www.atlassian.com/incident-management/postmortem"
+      ]
+    },
+    {
+      "name": "security_appsec",
+      "queries": [
+        "application security interview questions oauth jwt",
+        "owasp top 10 interview preparation",
+        "secure coding interview backend"
+      ],
+      "seed_urls": [
+        "https://owasp.org/www-project-top-ten/",
+        "https://cheatsheetseries.owasp.org/",
+        "https://auth0.com/docs/secure"
+      ]
+    },
+    {
+      "name": "cloud_platform",
+      "queries": [
+        "cloud architecture interview questions aws azure gcp",
+        "kubernetes interview questions production",
+        "autoscaling load balancing interview"
+      ],
+      "seed_urls": [
+        "https://learn.microsoft.com/en-us/azure/architecture/",
+        "https://cloud.google.com/architecture",
+        "https://kubernetes.io/docs/concepts/"
+      ]
+    },
+    {
+      "name": "coding_foundations",
+      "queries": [
+        "algorithm interview big o complexity examples",
+        "concurrency threading interview questions backend",
+        "data structures interview explanations"
+      ],
+      "seed_urls": [
+        "https://neetcode.io/practice",
+        "https://www.geeksforgeeks.org/interview-preparation-for-software-developer/",
+        "https://roadmap.sh/computer-science"
+      ]
+    },
+    {
+      "name": "behavioral_interview",
+      "queries": [
+        "software engineer behavioral interview sample answers",
+        "tell me about yourself software engineer interview",
+        "STAR method examples software developer"
+      ],
+      "seed_urls": [
+        "https://www.coursera.org/articles/behavioral-interview-questions",
+        "https://www.indeed.com/career-advice/interviewing/star-interview-method",
+        "https://www.themuse.com/advice/interview-questions-and-answers"
+      ]
+    },
+    {
+      "name": "nlp_and_llm",
+      "queries": [
+        "nlp interview questions transformer attention tokenization",
+        "llm system design interview retrieval augmented generation",
+        "embedding vector database interview questions"
+      ],
+      "seed_urls": [
+        "https://huggingface.co/docs/transformers/main/en/index",
+        "https://www.promptingguide.ai/",
+        "https://aclanthology.org/"
+      ]
+    },
+    {
+      "name": "mlops_infra",
+      "queries": [
+        "mlops interview questions model deployment monitoring",
+        "feature store interview questions",
+        "model drift detection interview answer"
+      ],
+      "seed_urls": [
+        "https://ml-ops.org/content/introduction",
+        "https://docs.aws.amazon.com/sagemaker/latest/dg/whatis.html",
+        "https://evidentlyai.com/ml-in-production"
+      ]
+    },
+    {
+      "name": "frontend_architecture",
+      "queries": [
+        "frontend system design interview questions",
+        "web performance interview questions core web vitals",
+        "state management interview react architecture"
+      ],
+      "seed_urls": [
+        "https://web.dev/learn/",
+        "https://developer.mozilla.org/en-US/docs/Web/Performance",
+        "https://react.dev/learn"
+      ]
+    }
+  ]
+}
