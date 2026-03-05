@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-NDJSON-driven local STT worker for LiveTranslate Assistant.
+NDJSON-driven local STT worker for Interview Copilot.
 
 Commands:
 - {"type":"start_session","model":"medium","runtime_mode":"auto","language_mode":"segment_auto","manual_language":"tr","vad":{...}}
@@ -321,7 +321,7 @@ def transcribe_pcm(
     elif stt_language_mode == "session_lock" and session_locked_language:
         forced_language = session_locked_language
 
-    fd, wav_path = tempfile.mkstemp(prefix="livetranslate_", suffix=".wav")
+    fd, wav_path = tempfile.mkstemp(prefix="interview_copilot_", suffix=".wav")
     os.close(fd)
 
     try:
@@ -695,3 +695,5 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+

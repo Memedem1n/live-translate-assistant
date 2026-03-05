@@ -2,9 +2,12 @@ import { app, safeStorage } from 'electron'
 import fs from 'fs'
 import path from 'path'
 import {
+  AssistEvent,
   HistoryExportFormat,
   HistoryListResult,
   HistorySessionSummary,
+  ReviewLabel,
+  ReviewSource,
   SessionHistoryRecord
 } from '../../shared/contracts'
 
@@ -13,9 +16,15 @@ const EXPORT_DIR = 'exports'
 const HISTORY_FILE_SUFFIX = '.session.enc'
 
 interface PersistedHistoryPayload {
-  version: 1
+  version: 1 | 2
   persistedAtMs: number
   record: SessionHistoryRecord
+}
+
+interface ReviewCounts {
+  reviewedCount: number
+  chosenCount: number
+  rejectedCount: number
 }
 
 function formatTimestamp(ms: number): string {
@@ -54,18 +63,9 @@ export class HistoryManager {
     }
 
     this.ensureDir(this.historyDirPath)
-
-    const payload: PersistedHistoryPayload = {
-      version: 1,
-      persistedAtMs: Date.now(),
-      record
-    }
-
-    const encrypted = safeStorage.encryptString(JSON.stringify(payload)).toString('base64')
-    const fileName = `${formatTimestamp(record.startedAtMs)}_${sanitizeForFileName(record.id)}${HISTORY_FILE_SUFFIX}`
-    const filePath = path.join(this.historyDirPath, fileName)
-
-    fs.writeFileSync(filePath, encrypted, 'utf8')
+    const normalized = this.normalizeRecord(record)
+    const filePath = this.findSessionFilePath(normalized.id) || this.buildSessionFilePath(normalized)
+    this.writePayload(filePath, normalized)
     return true
   }
 
@@ -99,7 +99,8 @@ export class HistoryManager {
         endedAtMs: payload.record.endedAtMs,
         persistedAtMs: payload.persistedAtMs,
         transcriptCount: payload.record.transcripts.length,
-        assistCount: payload.record.assists.length
+        assistCount: payload.record.assists.length,
+        ...this.reviewCounts(payload.record)
       })
     }
 
@@ -124,28 +125,78 @@ export class HistoryManager {
       const payload = this.readPayload(path.join(this.historyDirPath, name))
       if (!payload) continue
       if (payload.record.id === sessionId) {
-        return payload.record
+        return this.normalizeRecord(payload.record)
       }
     }
 
     return null
   }
 
+  updateAssistReview(
+    sessionId: string,
+    assistId: string,
+    review: {
+      reviewLabel: ReviewLabel
+      reviewTags?: string[]
+      reviewComment?: string
+      reviewSource?: ReviewSource
+    }
+  ): { record: SessionHistoryRecord; counts: ReviewCounts } | null {
+    if (!this.isEncryptionAvailable() || !fs.existsSync(this.historyDirPath)) {
+      return null
+    }
+
+    const filePath = this.findSessionFilePath(sessionId)
+    if (!filePath) {
+      return null
+    }
+
+    const payload = this.readPayload(filePath)
+    if (!payload) {
+      return null
+    }
+
+    const record = this.normalizeRecord(payload.record)
+    const assistIndex = record.assists.findIndex((item) => item.id === assistId)
+    if (assistIndex === -1) {
+      return null
+    }
+
+    const nextTags = Array.from(
+      new Set((review.reviewTags || []).map((item) => String(item || '').trim()).filter(Boolean))
+    )
+    record.assists[assistIndex] = {
+      ...record.assists[assistIndex],
+      reviewLabel: review.reviewLabel,
+      reviewTags: nextTags,
+      reviewComment: String(review.reviewComment || '').trim() || undefined,
+      reviewedAtMs: Date.now(),
+      reviewSource: review.reviewSource || 'ui'
+    }
+
+    this.writePayload(filePath, record)
+    return {
+      record,
+      counts: this.reviewCounts(record)
+    }
+  }
+
   exportSession(record: SessionHistoryRecord, format: HistoryExportFormat): string {
     this.ensureDir(this.exportDirPath)
+    const normalized = this.normalizeRecord(record)
 
-    const fileBase = `session_${formatTimestamp(record.startedAtMs)}_${sanitizeForFileName(record.id)}`
+    const fileBase = `session_${formatTimestamp(normalized.startedAtMs)}_${sanitizeForFileName(normalized.id)}`
     const filePath =
       format === 'json'
         ? path.join(this.exportDirPath, `${fileBase}.json`)
         : path.join(this.exportDirPath, `${fileBase}.md`)
 
     if (format === 'json') {
-      fs.writeFileSync(filePath, JSON.stringify(record, null, 2), 'utf8')
+      fs.writeFileSync(filePath, JSON.stringify(normalized, null, 2), 'utf8')
       return filePath
     }
 
-    const markdown = this.renderMarkdown(record)
+    const markdown = this.renderMarkdown(normalized)
     fs.writeFileSync(filePath, markdown, 'utf8')
     return filePath
   }
@@ -156,14 +207,84 @@ export class HistoryManager {
       const decryptedText = safeStorage.decryptString(Buffer.from(encryptedBase64, 'base64'))
       const parsed = JSON.parse(decryptedText) as PersistedHistoryPayload
 
-      if (parsed.version !== 1 || !parsed.record?.id) {
+      if (![1, 2].includes(parsed.version) || !parsed.record?.id) {
         return null
       }
 
-      return parsed
+      return {
+        ...parsed,
+        record: this.normalizeRecord(parsed.record)
+      }
     } catch {
       return null
     }
+  }
+
+  private buildSessionFilePath(record: SessionHistoryRecord): string {
+    const fileName = `${formatTimestamp(record.startedAtMs)}_${sanitizeForFileName(record.id)}${HISTORY_FILE_SUFFIX}`
+    return path.join(this.historyDirPath, fileName)
+  }
+
+  private findSessionFilePath(sessionId: string): string | null {
+    if (!fs.existsSync(this.historyDirPath)) {
+      return null
+    }
+
+    const entries = fs
+      .readdirSync(this.historyDirPath)
+      .filter((name) => name.endsWith(HISTORY_FILE_SUFFIX))
+
+    for (const name of entries) {
+      const filePath = path.join(this.historyDirPath, name)
+      const payload = this.readPayload(filePath)
+      if (!payload) continue
+      if (payload.record.id === sessionId) {
+        return filePath
+      }
+    }
+
+    return null
+  }
+
+  private writePayload(filePath: string, record: SessionHistoryRecord): void {
+    const payload: PersistedHistoryPayload = {
+      version: 2,
+      persistedAtMs: Date.now(),
+      record: this.normalizeRecord(record)
+    }
+    const encrypted = safeStorage.encryptString(JSON.stringify(payload)).toString('base64')
+    fs.writeFileSync(filePath, encrypted, 'utf8')
+  }
+
+  private normalizeAssist(item: AssistEvent): AssistEvent {
+    const reviewTags = Array.isArray(item.reviewTags)
+      ? Array.from(new Set(item.reviewTags.map((tag) => String(tag || '').trim()).filter(Boolean)))
+      : undefined
+    return {
+      ...item,
+      reviewLabel: item.reviewLabel || 'unreviewed',
+      reviewTags,
+      reviewComment: item.reviewComment ? String(item.reviewComment).trim() : undefined
+    }
+  }
+
+  private normalizeRecord(record: SessionHistoryRecord): SessionHistoryRecord {
+    return {
+      ...record,
+      schemaVersion: 'session.v2',
+      transcripts: (record.transcripts || []).map((item) => ({ ...item })),
+      assists: (record.assists || []).map((item) => this.normalizeAssist(item))
+    }
+  }
+
+  private reviewCounts(record: SessionHistoryRecord): ReviewCounts {
+    const assists = record.assists || []
+    const chosenCount = assists.filter((item) => item.reviewLabel === 'chosen').length
+    const rejectedCount = assists.filter((item) => item.reviewLabel === 'rejected').length
+    const reviewedCount = assists.filter(
+      (item) => item.reviewLabel && item.reviewLabel !== 'unreviewed' && item.reviewLabel !== 'skipped'
+    ).length
+    return { reviewedCount, chosenCount, rejectedCount }
   }
 
   private ensureDir(dirPath: string): void {
@@ -177,7 +298,7 @@ export class HistoryManager {
       .map((item) => {
         const confidence = `${Math.round((item.confidence || 0) * 100)}%`
         const language = (item.language || 'unknown').toUpperCase()
-        const text = item.text || item.textEn || ''
+        const text = item.text || ''
         return `| ${toIso(item.tEndMs)} | ${item.speaker} | ${language} | ${confidence} | ${escapeMdCell(text)} |`
       })
       .join('\n')
@@ -186,22 +307,30 @@ export class HistoryManager {
       .map((item) => {
         const mode = item.parseMode || 'n/a'
         const fallback = item.fallbackUsed ? 'yes' : 'no'
+        const reviewLabel = item.reviewLabel || 'unreviewed'
+        const reviewTags = (item.reviewTags || []).join(', ')
         return `| ${item.state} | ${Math.round(item.latencyMs)} | ${Math.round((item.confidence || 0) * 100)}% | ${mode} | ${fallback} | ${escapeMdCell(
-          item.translationTr || ''
-        )} | ${escapeMdCell(item.replyEn || '')} | ${escapeMdCell(item.replyTr || '')} | ${escapeMdCell(item.error || '')} |`
+          item.questionTr || ''
+        )} | ${escapeMdCell(item.answerEn || '')} | ${escapeMdCell(item.helperAnswerTr || '')} | ${escapeMdCell((item.supportSignals?.riskFlags || []).join(', '))} | ${escapeMdCell(reviewLabel)} | ${escapeMdCell(reviewTags)} | ${escapeMdCell(item.error || '')} |`
       })
       .join('\n')
 
+    const counts = this.reviewCounts(record)
+
     return [
-      '# LiveTranslate Session Export',
+      '# Interview Copilot Session Export',
       '',
       `- Session ID: \`${record.id}\``,
       `- Started: ${toIso(record.startedAtMs)}`,
       `- Ended: ${toIso(record.endedAtMs)}`,
       `- STT Model: \`${record.sttModel}\``,
-      `- Answer Model: \`${record.answerModel}\``,
+      `- Inference Profile: \`${record.inferenceProfileId}\``,
+      `- Inference Model: \`${record.inferenceModel}\``,
       `- Transcript Count: ${record.transcripts.length}`,
       `- Assist Count: ${record.assists.length}`,
+      `- Reviewed Assists: ${counts.reviewedCount}`,
+      `- Chosen Assists: ${counts.chosenCount}`,
+      `- Rejected Assists: ${counts.rejectedCount}`,
       '',
       '## Transcripts',
       '',
@@ -211,10 +340,11 @@ export class HistoryManager {
       '',
       '## Assist Outputs',
       '',
-      '| State | LatencyMs | Confidence | Parse | Fallback | Translation TR | Reply EN | Reply TR | Error |',
-      '| --- | --- | --- | --- | --- | --- | --- | --- | --- |',
-      assistLines || '| - | - | - | - | - | - | - | - | - |',
+      '| State | LatencyMs | Confidence | Parse | Fallback | Question TR | Answer EN | Helper TR | Risk Flags | Review | Review Tags | Error |',
+      '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
+      assistLines || '| - | - | - | - | - | - | - | - | - | - | - | - |',
       ''
     ].join('\n')
   }
 }
+

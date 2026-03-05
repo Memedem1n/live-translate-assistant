@@ -44,7 +44,7 @@ export class ConnectorService {
 
     const headers: Record<string, string> = {
       Accept: 'application/vnd.github+json',
-      'User-Agent': 'LiveTranslate-Assistant'
+      'User-Agent': 'Interview-Copilot'
     }
     if (request.token) {
       headers.Authorization = `Bearer ${request.token}`
@@ -109,7 +109,7 @@ export class ConnectorService {
     for (const repo of repos) {
       const readmeResp = await fetch(
         `https://raw.githubusercontent.com/${encodeURIComponent(username)}/${encodeURIComponent(repo.name)}/HEAD/README.md`,
-        { headers: { 'User-Agent': 'LiveTranslate-Assistant' } }
+        { headers: { 'User-Agent': 'Interview-Copilot' } }
       )
 
       const readmeText = readmeResp.ok ? await readmeResp.text() : ''
@@ -154,3 +154,4 @@ export class ConnectorService {
     })
   }
 }
+

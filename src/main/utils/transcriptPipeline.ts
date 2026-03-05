@@ -4,7 +4,6 @@ export interface RemoteAssistSegment {
   id: string
   speaker: 'remote'
   text: string
-  textEn: string
   language?: string
   tStartMs: number
   tEndMs: number
@@ -69,7 +68,7 @@ export function shouldDropSelfTranscriptAsEcho(
 ): boolean {
   if (event.speaker !== 'self') return false
 
-  const text = normalizeSpeechText(event.text || event.textEn || '')
+  const text = normalizeSpeechText(event.text || '')
   if (!text) return true
   if (text.length < 3) return true
 
@@ -77,8 +76,8 @@ export function shouldDropSelfTranscriptAsEcho(
   const deltaMs = Math.abs(event.emittedMs - lastRemoteTranscript.emittedMs)
   if (deltaMs > (options?.echoWindowMs ?? 3000)) return false
 
-  const eventText = event.text || event.textEn || ''
-  const remoteText = lastRemoteTranscript.text || lastRemoteTranscript.textEn || ''
+  const eventText = event.text || ''
+  const remoteText = lastRemoteTranscript.text || ''
   const similarity = tokenJaccard(eventText, remoteText)
   if (similarity < (options?.echoSimilarity ?? 0.86)) return false
 
@@ -103,12 +102,11 @@ export function shouldSplitRemoteSegment(
 }
 
 export function createRemoteSegment(event: TranscriptEvent, nowMs: number): RemoteAssistSegment {
-  const nextText = (event.text || event.textEn || '').trim()
+  const nextText = (event.text || '').trim()
   return {
     id: event.id,
     speaker: 'remote',
     text: nextText,
-    textEn: nextText,
     language: event.language,
     tStartMs: event.tStartMs,
     tEndMs: event.tEndMs,
@@ -124,12 +122,11 @@ export function appendRemoteSegment(
   event: TranscriptEvent,
   nowMs: number
 ): RemoteAssistSegment {
-  const nextText = (event.text || event.textEn || '').trim()
+  const nextText = (event.text || '').trim()
   return {
     ...current,
     id: event.id,
     text: mergeTranscriptText(current.text, nextText),
-    textEn: mergeTranscriptText(current.textEn, nextText),
     language: event.language || current.language,
     tEndMs: event.tEndMs,
     emittedMs: event.emittedMs,
@@ -172,7 +169,7 @@ export function buildContextLines(
 
   const merged: Array<{ speaker: TranscriptEvent['speaker']; text: string }> = []
   for (const item of history.slice(-120)) {
-    const text = (item.text || item.textEn || '').trim()
+    const text = (item.text || '').trim()
     if (!text) continue
 
     const prev = merged[merged.length - 1]
@@ -212,10 +209,10 @@ export function buildContextLines(
     })
 
   const assistantLines = assists
-    .filter((item) => item.state === 'final' && !!(item.replyEn || item.replyTr))
+    .filter((item) => item.state === 'final' && !!(item.answerEn || item.helperAnswerTr))
     .slice(-assistantTurns)
     .map((item) => {
-      const text = (item.replyEn || item.replyTr || '').trim()
+      const text = (item.answerEn || item.helperAnswerTr || '').trim()
       const clipped = text.length > maxCharsPerLine ? `${text.slice(0, maxCharsPerLine)}...` : text
       return `[assistant] ${clipped}`.trim()
     })

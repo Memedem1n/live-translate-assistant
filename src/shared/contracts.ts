@@ -1,20 +1,23 @@
-export type Speaker = 'remote' | 'self'
+﻿export type Speaker = 'remote' | 'self'
 export type SessionPhase = 'idle' | 'starting' | 'running' | 'degraded' | 'stopping' | 'error'
 export type VadApplyMode = 'live' | 'restart'
 export type ReconnectState = 'stable' | 'retrying' | 'fallback' | 'failed'
 export type SttRuntimeMode = 'auto' | 'cuda' | 'cpu'
 export type SttRuntimePhase = 'idle' | 'loading' | 'warming' | 'running' | 'degraded' | 'error'
 export type SystemAudioStrategy = 'auto_live' | 'picker_each_start' | 'manual'
-export type SttLanguageMode = 'segment_auto' | 'session_lock' | 'manual'
-export type MeetingLanguage = 'en' | 'tr'
-export type AssistOutputPolicy = 'source_based' | 'bilingual'
-export type AssistantMode = 'meeting' | 'interview'
-export type InterviewAnswerStyle = 'star_short_30s'
+export type SessionLanguage = 'en'
+export type ProductMode = 'interview_live' | 'interview_practice'
+export type InterviewAnswerStyle = 'natural_first_person'
 export type AssistIntentClass = 'candidate_specific' | 'technical_general' | 'mixed'
 export type AssistAnswerMode = 'general_first' | 'profile_first' | 'profile_only' | 'balanced'
 export type AssistPersonalizationPolicy = 'intent_aware' | 'always'
 export type AssistCompositionPolicy = 'auto' | 'general_then_profile' | 'profile_only'
-export type AssistLanguagePolicy = 'auto' | 'tr' | 'bilingual'
+export type PersonalizationMode = 'personalized' | 'generic_fallback'
+export type ProviderKind = 'ollama' | 'openai_compatible'
+export type InferenceProfileId = 'llama3_1_8b_primary' | 'qwen2_5_7b_latency' | 'mistral_7b_natural'
+export type ConfidenceBand = 'low' | 'medium' | 'high'
+export type ReviewLabel = 'chosen' | 'rejected' | 'skipped' | 'unreviewed'
+export type ReviewSource = 'ui' | 'offline'
 export type ProfileSourceType =
   | 'cv'
   | 'github'
@@ -28,18 +31,37 @@ export type ProfileSyncState = 'idle' | 'running' | 'done' | 'error'
 export type ProfileImportOcrMode = 'auto' | 'always' | 'never'
 export type ProfileImportParser = 'text' | 'docx' | 'pdf_text' | 'ocr'
 
+export interface ProviderEndpointConfig {
+  kind: ProviderKind
+  baseUrl: string
+  model: string
+  apiKey?: string
+}
+
+export interface ProviderConfig {
+  inference: ProviderEndpointConfig
+  translation: ProviderEndpointConfig & {
+    enabled: boolean
+  }
+}
+
 export interface TranscriptEvent {
   id: string
   speaker: Speaker
   text: string
   language: string
   languageConfidence?: number
-  textEn: string
   isFinal: boolean
   tStartMs: number
   tEndMs: number
   emittedMs: number
   confidence: number
+}
+
+export interface SupportSignals {
+  contextHitCount: number
+  confidenceBand: ConfidenceBand
+  riskFlags: string[]
 }
 
 export interface AssistEvent {
@@ -48,20 +70,25 @@ export interface AssistEvent {
   segmentId?: string
   sourceLanguage?: string
   sourceText?: string
-  outputPolicy?: AssistOutputPolicy
-  translationTr?: string
-  replyEn?: string
-  replyTr?: string
+  questionTr?: string
+  answerEn?: string
+  helperAnswerTr?: string
   confidence?: number
   qualityFlags?: string[]
+  supportSignals?: SupportSignals
+  contextLinesUsed?: string[]
   latencyMs: number
   firstTokenMs?: number
   fallbackUsed?: boolean
   parseMode?: 'primary' | 'fallback'
-  personalizationMode?: 'personalized' | 'generic_fallback'
+  personalizationMode?: PersonalizationMode
   intentClass?: AssistIntentClass
   answerMode?: AssistAnswerMode
-  languagePolicy?: AssistLanguagePolicy
+  reviewLabel?: ReviewLabel
+  reviewTags?: string[]
+  reviewComment?: string
+  reviewedAtMs?: number
+  reviewSource?: ReviewSource
   state: 'partial' | 'final' | 'error'
   rawText?: string
   error?: string
@@ -259,11 +286,13 @@ export interface SttRuntimeStatusEvent {
 export type HistoryExportFormat = 'json' | 'markdown'
 
 export interface SessionHistoryRecord {
+  schemaVersion?: 'session.v1' | 'session.v2'
   id: string
   startedAtMs: number
   endedAtMs: number
   sttModel: string
-  answerModel: string
+  inferenceProfileId: InferenceProfileId
+  inferenceModel: string
   transcripts: TranscriptEvent[]
   assists: AssistEvent[]
 }
@@ -275,11 +304,19 @@ export interface HistorySessionSummary {
   persistedAtMs: number
   transcriptCount: number
   assistCount: number
+  reviewedCount: number
+  chosenCount: number
+  rejectedCount: number
 }
 
 export interface HistoryListResult {
   encryptionAvailable: boolean
   sessions: HistorySessionSummary[]
+}
+
+export interface HistorySessionDetailResult {
+  success: boolean
+  record: SessionHistoryRecord | null
 }
 
 export interface HistoryExportRequest {
@@ -294,21 +331,38 @@ export interface HistoryExportResult {
   sessionId: string
 }
 
+export interface HistoryUpdateAssistReviewRequest {
+  sessionId: string
+  assistId: string
+  reviewLabel: ReviewLabel
+  reviewTags?: string[]
+  reviewComment?: string
+  reviewSource?: ReviewSource
+}
+
+export interface HistoryUpdateAssistReviewResult {
+  success: boolean
+  sessionId: string
+  assistId: string
+  reviewLabel: ReviewLabel
+  reviewedCount: number
+  chosenCount: number
+  rejectedCount: number
+}
+
 export interface AppSettings {
-  assistantMode: AssistantMode
+  productMode: ProductMode
   personalizationEnabled: boolean
   assistPersonalizationPolicy: AssistPersonalizationPolicy
   assistCompositionPolicy: AssistCompositionPolicy
-  assistLanguagePolicy: AssistLanguagePolicy
   githubSyncEnabled: boolean
   interviewAnswerStyle: InterviewAnswerStyle
+  sessionLanguage: SessionLanguage
   sttModel: string
   sttRuntimeMode: SttRuntimeMode
-  sttLanguageMode: SttLanguageMode
-  manualSttLanguage: MeetingLanguage
-  answerModel: string
-  assistOutputPolicy: AssistOutputPolicy
-  ollamaBaseUrl: string
+  inferenceProfileId: InferenceProfileId
+  helperTranslationEnabled: boolean
+  providerConfig: ProviderConfig
   overlayOpacity: number
   overlayVisible: boolean
   overlayClickThrough: boolean
@@ -324,11 +378,9 @@ export interface AppSettings {
 }
 
 export interface SessionStartRequest {
-  mode: 'meeting'
+  mode: ProductMode
   sttModel?: string
   sttRuntimeMode?: SttRuntimeMode
-  sttLanguageMode?: SttLanguageMode
-  manualSttLanguage?: MeetingLanguage
   vad?: VadConfig
 }
 
@@ -366,13 +418,13 @@ export interface TranscriptInjection {
   language?: string
 }
 
-export interface ManualAssistRequest {
+export interface PracticeAssistRequest {
   text: string
   language?: string
   speaker?: Speaker
 }
 
-export interface ManualAssistResult {
+export interface PracticeAssistResult {
   success: boolean
   transcriptId: string
   assistId?: string
@@ -395,8 +447,6 @@ export interface WindowAPI {
   importProfileSource: (payload: ProfileImportRequest) => Promise<ProfileImportResult>
   importProfileFile: (payload: ProfileImportFileRequest) => Promise<ProfileImportFileResult>
   syncGithubProfile: (payload: GithubSyncRequest) => Promise<ProfileSyncStatus>
-  syncWebCorpus: (payload?: WebCorpusSyncRequest) => Promise<WebCorpusSyncResult>
-  ingestGlossary: (payload?: GlossaryIngestRequest) => Promise<GlossaryIngestResult>
   reindexProfileMemory: () => Promise<ProfileReindexResult>
   getInterviewContextPreview: (query?: string) => Promise<InterviewContextPreview>
   clearProfileSource: (payload: ProfileClearSourceRequest) => Promise<{ success: boolean }>
@@ -408,8 +458,12 @@ export interface WindowAPI {
   getAudioSources: () => Promise<AudioSourceItem[]>
   sendAudioChunk: (chunk: AudioChunkInput) => void
   injectTranscript: (payload: TranscriptInjection) => Promise<{ success: boolean }>
-  generateManualAssist: (payload: ManualAssistRequest) => Promise<ManualAssistResult>
+  generatePracticeAnswer: (payload: PracticeAssistRequest) => Promise<PracticeAssistResult>
   listHistorySessions: () => Promise<HistoryListResult>
+  getHistorySessionDetail: (sessionId: string) => Promise<HistorySessionDetailResult>
+  updateAssistReview: (
+    payload: HistoryUpdateAssistReviewRequest
+  ) => Promise<HistoryUpdateAssistReviewResult>
   exportSessionHistory: (payload: HistoryExportRequest) => Promise<HistoryExportResult>
   setOverlay: (settings: OverlaySettings) => Promise<{ success: boolean }>
   hideControlWindow: () => Promise<{ success: boolean }>
@@ -425,5 +479,5 @@ export interface WindowAPI {
   onLatencyMetrics: (cb: (event: LatencyMetricsEvent) => void) => () => void
   onSttRuntimeStatus: (cb: (event: SttRuntimeStatusEvent) => void) => () => void
   onShortcutMuteToggle: (cb: (muted: boolean) => void) => () => void
-  onProfileSyncStatus: (cb: (event: ProfileSyncStatus) => void) => () => void
+  onProfileSyncStatus: (cb: (status: ProfileSyncStatus) => void) => () => void
 }

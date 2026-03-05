@@ -3,7 +3,7 @@ import os from 'os'
 import path from 'path'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const tempRoot = path.join(os.tmpdir(), 'livetranslate-profile-memory-tests')
+const tempRoot = path.join(os.tmpdir(), 'interview-copilot-profile-memory-tests')
 
 vi.mock('electron', () => ({
   app: {
@@ -101,3 +101,4 @@ describe('ProfileMemoryService', () => {
     expect(filtered.every((line) => line.includes('[profile:knowledge_base]'))).toBe(true)
   })
 })
+

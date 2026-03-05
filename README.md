@@ -1,120 +1,108 @@
-﻿# LiveTranslate Assistant
+# Interview Copilot
 
-LiveTranslate Assistant is a local-first Windows desktop copilot for live meetings.
+Interview Copilot is a local-first Windows desktop copilot for live software-engineering interviews.
 
-## What V1 does
+## V1 scope
 
-- Captures live conversation context (remote + self tracks)
-- Produces multi-language transcript (TR/EN auto) and Turkish translation
-- Generates short context-aware reply suggestions in both EN and TR
-- Runs with local models by default (Ollama + faster-whisper)
-- Uses dual-window UI: control panel + transparent overlay
-- Supports opt-in encrypted session history
-- Supports session export to JSON / Markdown
-- Uses minimal control panel UX with automatic system-audio capture default
+- Captures interviewer and candidate audio in real time
+- Produces English-first transcripts for live technical interviews
+- Generates first-person English answer suggestions grounded in candidate context
+- Optionally shows Turkish helper translations without blocking the main answer path
+- Runs locally by default with `faster-whisper` and Ollama-compatible inference
+- Uses a two-window interface: control panel + transparent overlay
+- Persists session history locally with opt-in encryption
+- Exports full interview sessions to JSON or Markdown for review and future training
+
+## Runtime defaults
+
+- Primary inference candidate: `llama3.1:8b-instruct-q4_K_M`
+- Latency fallback: `qwen2.5:7b-instruct-q4_K_M`
+- Naturalness challenger: `mistral:7b-instruct-v0.3-q4_K_M`
+- Helper translation model: `qwen2.5:3b-instruct-q4_K_M`
+- STT default: `medium.en`
+- STT quality candidate: `large-v3-turbo`
 
 ## Quick start
 
 1. Install prerequisites:
    - Node.js 20+
-2. Install runtime dependencies (Windows, recommended stable path):
+2. Install Windows runtime dependencies:
    - `npm run runtime:setup`
-3. Verify CUDA/runtime health (recommended):
+3. Verify CUDA and local runtime health:
    - `npm run runtime:probe`
-4. Pull local answer model set (full profile):
+4. Pull the local model bundle:
    - `npm run models:pull`
 5. Install app dependencies:
    - `npm install`
-6. Run dev app:
+6. Start the app:
    - `npm run dev`
 
-## Model footprint (selected demo package)
+## Benchmark flow
 
-- `qwen2.5:3b-instruct-q4_K_M`: ~1.9 GB
-- `qwen2.5:7b-instruct-q4_K_M`: ~4.7 GB
-- `qwen2.5:14b-instruct-q4_K_M`: ~9.0 GB
-- `small.en` (faster-whisper): ~0.48 GB
-- `medium.en` (faster-whisper): ~1.53 GB
-- `large-v3` (faster-whisper): ~3.09 GB
-- Model total: ~20.7 GB (practical disk use with cache: ~21-22 GB)
-
-## Benchmark and demo
-
-1. Prepare public sample clips:
+1. Prepare sample clips:
    - `npm run clips:prepare`
-2. Preload STT model files:
+2. Preload STT assets:
    - `npm run stt:prewarm`
-3. Run latency model sweep:
+3. Run the latency and quality sweep:
    - `npm run benchmark:sweep`
-4. End-to-end demo pipeline (steps 1-3 together):
+4. Run the end-to-end demo pipeline:
    - `npm run demo:pipeline`
-5. Check JSON reports in `benchmark/reports/`.
-6. Latency gate decisions should use `summary.warm_gate`.
+5. Review reports in `benchmark/reports/`.
+6. Promotion decisions should use `summary.warm_gate`.
 
-## Personalization pipeline (RAG + LoRA prep)
+## Training and personalization flow
 
-1. Build web corpus:
+1. Sync the curated interview/web corpus:
    - `npm run corpus:sync`
-2. Build interview glossary:
+   - higher quality preset: `npm run corpus:sync:quality`
+2. Import external interview QA datasets:
+   - `npm run corpus:import:external`
+3. Build the interview glossary:
    - `npm run glossary:build`
-3. Build train/valid fine-tune dataset:
+4. Build train/valid fine-tune datasets:
    - `npm run finetune:dataset`
-4. Prepare local LoRA training environment (separate venv):
+5. Run dataset quality checks:
+   - `npm run finetune:quality-check`
+6. Prepare the separate LoRA training environment:
    - `npm run finetune:setup-env`
-5. Check local LoRA training environment:
+7. Verify the local training environment:
    - `npm run finetune:check-env`
-6. Prepare/run LoRA training command template:
+8. Prepare or smoke-test LoRA commands:
    - `npm run finetune:prepare-lora`
-   - optional smoke run: `npm run finetune:prepare-lora:smoke`
-7. Package adapter for Ollama (after training):
+   - `npm run finetune:prepare-lora:smoke`
+9. Package the trained adapter for Ollama:
    - `npm run finetune:package-ollama`
 
-## History and export
+## Session history
 
-1. Enable `History Opt-In` in Control panel and click `Save Settings`.
-2. Run a session and stop it.
-3. In `History & Export`, use:
-   - `Refresh History` to list persisted sessions
-   - `Export Current JSON` / `Export Current Markdown`
-   - Per-session JSON/Markdown export buttons
-4. Exports are written to app `userData/exports/`.
+1. Enable `History Opt-In` in the control panel.
+2. Run an interview session and stop it.
+3. Use the history/export controls to export JSON or Markdown.
+4. Exports are written to the app `userData/exports/` directory.
 
-## Packaging (Windows)
+## Packaging
 
-- Local installer build:
+- Installer build:
   - `npm run build:win`
 - Unpacked directory build:
   - `npm run build:win:dir`
 - Icon asset generation:
   - `npm run asset:icon`
-  - output: `build/icon.ico`
 - Code-signing readiness check:
   - `npm run codesign:check`
-- CI installer pipeline:
-  - `.github/workflows/windows-installer.yml`
-  - Triggered by `v*` tag pushes or manual dispatch.
-  - Signing is optional; without secrets installer is built unsigned.
-  - Optional signing secrets:
-    - `WINDOWS_CERT_PFX_BASE64`
-    - `WINDOWS_CERT_PASSWORD`
-  - Setup guide: `docs/CODE_SIGNING_TR.md`
 
 ## Default hotkeys
 
 - `Ctrl+Shift+O`: Toggle overlay
-- `Ctrl+Shift+M`: Mute/Unmute suggestions
+- `Ctrl+Shift+M`: Mute suggestions
 - `Ctrl+Shift+H`: Panic hide overlay
 
-## Documentation
+## Docs
 
 - `docs/ARCHITECTURE.md`
 - `docs/API_SPEC.md`
-- `docs/ROADMAP.md`
 - `docs/PERFORMANCE_PLAN.md`
 - `docs/MODEL_SETUP_TR.md`
-- `docs/EOD_2026-03-03_TR.md`
-- `docs/EOD_2026-03-04_TR.md`
+- `docs/DATASET_SOURCE_AUDIT_TR.md`
 - `docs/PRIVACY_TR.md`
 - `docs/CODE_SIGNING_TR.md`
-- `docs/RELEASE_STRATEGY.md`
-- `docs/UI_GUIDELINES_TR.md`

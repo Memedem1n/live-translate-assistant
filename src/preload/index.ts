@@ -4,15 +4,19 @@ import {
   AssistEvent,
   AudioChunkInput,
   AudioSourceItem,
-  GlossaryIngestRequest,
-  GlossaryIngestResult,
   GithubSyncRequest,
   HistoryExportRequest,
   HistoryExportResult,
   HistoryListResult,
-  ManualAssistRequest,
-  ManualAssistResult,
+  HistorySessionDetailResult,
+  HistoryUpdateAssistReviewRequest,
+  HistoryUpdateAssistReviewResult,
   InterviewContextPreview,
+  OverlaySettings,
+  OverlayStateEvent,
+  LatencyMetricsEvent,
+  PracticeAssistRequest,
+  PracticeAssistResult,
   ProfileClearSourceRequest,
   ProfileImportFileRequest,
   ProfileImportFileResult,
@@ -21,15 +25,10 @@ import {
   ProfileReindexResult,
   ProfileSnapshot,
   ProfileSyncStatus,
-  WebCorpusSyncRequest,
-  WebCorpusSyncResult,
-  OverlaySettings,
-  OverlayStateEvent,
-  LatencyMetricsEvent,
-  SttRuntimeStatusEvent,
   SessionStartRequest,
   SessionStateEvent,
   SessionUpdateVadRequest,
+  SttRuntimeStatusEvent,
   TranscriptEvent,
   TranscriptInjection,
   WindowAPI,
@@ -53,10 +52,6 @@ const api: WindowAPI = {
     ipcRenderer.invoke('profile:import-file', payload) as Promise<ProfileImportFileResult>,
   syncGithubProfile: (payload: GithubSyncRequest) =>
     ipcRenderer.invoke('profile:sync-github', payload) as Promise<ProfileSyncStatus>,
-  syncWebCorpus: (payload?: WebCorpusSyncRequest) =>
-    ipcRenderer.invoke('profile:sync-web-corpus', payload || {}) as Promise<WebCorpusSyncResult>,
-  ingestGlossary: (payload?: GlossaryIngestRequest) =>
-    ipcRenderer.invoke('profile:ingest-glossary', payload || {}) as Promise<GlossaryIngestResult>,
   reindexProfileMemory: () => ipcRenderer.invoke('profile:reindex') as Promise<ProfileReindexResult>,
   getInterviewContextPreview: (query?: string) =>
     ipcRenderer.invoke('profile:context-preview', query) as Promise<InterviewContextPreview>,
@@ -75,9 +70,13 @@ const api: WindowAPI = {
   sendAudioChunk: (chunk: AudioChunkInput) => ipcRenderer.send('audio:chunk', chunk),
   injectTranscript: (payload: TranscriptInjection) =>
     ipcRenderer.invoke('transcript:inject', payload) as Promise<{ success: boolean }>,
-  generateManualAssist: (payload: ManualAssistRequest) =>
-    ipcRenderer.invoke('assist:manual-generate', payload) as Promise<ManualAssistResult>,
+  generatePracticeAnswer: (payload: PracticeAssistRequest) =>
+    ipcRenderer.invoke('assist:practice-generate', payload) as Promise<PracticeAssistResult>,
   listHistorySessions: () => ipcRenderer.invoke('history:list') as Promise<HistoryListResult>,
+  getHistorySessionDetail: (sessionId: string) =>
+    ipcRenderer.invoke('history:detail', sessionId) as Promise<HistorySessionDetailResult>,
+  updateAssistReview: (payload: HistoryUpdateAssistReviewRequest) =>
+    ipcRenderer.invoke('history:update-review', payload) as Promise<HistoryUpdateAssistReviewResult>,
   exportSessionHistory: (payload: HistoryExportRequest) =>
     ipcRenderer.invoke('history:export', payload) as Promise<HistoryExportResult>,
   setOverlay: (settings: OverlaySettings) =>
@@ -97,8 +96,7 @@ const api: WindowAPI = {
   onDiagnosticsUpdate: (cb) => createListener<WorkerDiagnosticsEvent>('diagnostics:update', cb),
   onLatencyMetrics: (cb) => createListener<LatencyMetricsEvent>('metrics:latency', cb),
   onSttRuntimeStatus: (cb) => createListener<SttRuntimeStatusEvent>('stt:runtime-status', cb),
-  onShortcutMuteToggle: (cb) =>
-    createListener<boolean>('shortcut:mute-toggle', (muted) => cb(muted)),
+  onShortcutMuteToggle: (cb) => createListener<boolean>('shortcut:mute-toggle', (muted) => cb(muted)),
   onProfileSyncStatus: (cb) => createListener<ProfileSyncStatus>('profile:sync-status', cb)
 }
 

@@ -10,7 +10,7 @@ from pathlib import Path
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Prepare Ollama Modelfile for a LoRA adapter.")
-    parser.add_argument("--base", default="qwen2.5:7b-instruct-q4_K_M", help="Base Ollama model")
+    parser.add_argument("--base", default="llama3.1:8b-instruct-q4_K_M", help="Base Ollama model")
     parser.add_argument(
         "--adapter-dir",
         default="artifacts/finetune/lora_interview",
@@ -26,7 +26,7 @@ def main() -> int:
         default="artifacts/finetune/lora_interview/Modelfile",
         help="Output Modelfile path",
     )
-    parser.add_argument("--model-name", default="live-translate-interview-lora", help="Target Ollama model name")
+    parser.add_argument("--model-name", default="interview-copilot-lora", help="Target Ollama model name")
     parser.add_argument("--create", action="store_true", help="Run `ollama create` after writing Modelfile")
     args = parser.parse_args()
 
@@ -88,3 +88,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+

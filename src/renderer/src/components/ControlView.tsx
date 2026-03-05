@@ -2,86 +2,73 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { MeetingAudioCapture } from '../services/audioCapture'
 import { useAppStore } from '../store/useAppStore'
 import {
-  AssistCompositionPolicy,
   AssistEvent,
-  AssistLanguagePolicy,
-  AssistPersonalizationPolicy,
   ProfileSourceType,
+  ProviderKind,
+  ReviewLabel,
+  SessionHistoryRecord,
   SystemAudioStrategy
 } from '../../../shared/contracts'
 
-function assistPrimaryText(item: AssistEvent): string {
-  const sourceLanguage = String(item.sourceLanguage || '').toLowerCase()
-  if (sourceLanguage === 'tr') {
-    return item.replyTr || item.replyEn || item.rawText || '-'
-  }
-  return item.replyEn || item.replyTr || item.rawText || '-'
+const PROFILE_PRESETS = [
+  { id: 'llama3_1_8b_primary', title: 'Llama 3.1 8B', model: 'llama3.1:8b-instruct-q4_K_M' },
+  { id: 'qwen2_5_7b_latency', title: 'Qwen 2.5 7B', model: 'qwen2.5:7b-instruct-q4_K_M' },
+  { id: 'mistral_7b_natural', title: 'Mistral 7B', model: 'mistral:7b-instruct-v0.3-q4_K_M' }
+] as const
+const STT_MODELS = ['medium.en', 'large-v3-turbo', 'large-v3']
+const SOURCE_LABEL: Record<ProfileSourceType, string> = {
+  cv: 'CV', github: 'GitHub', linkedin: 'LinkedIn', job_desc: 'Job Description', note: 'Interview Notes', knowledge_base: 'Knowledge Base', web_corpus: 'Web Corpus', glossary: 'Glossary'
+}
+const CHOSEN_TAGS = ['grounded', 'concise', 'star_ready', 'technical_tradeoff', 'calming', 'accurate']
+const REJECTED_TAGS = ['too_long', 'generic', 'hallucinated', 'role_confusion', 'asks_question_back', 'not_first_person', 'too_vague', 'overconfident']
+
+function mainAnswer(item?: AssistEvent | null): string {
+  return item?.answerEn || item?.rawText || '-'
 }
 
-function assistSecondaryText(item: AssistEvent): string {
-  const sourceLanguage = String(item.sourceLanguage || '').toLowerCase()
-  if (sourceLanguage === 'tr') {
-    return item.replyEn || item.translationTr || '-'
-  }
-  return item.replyTr || item.translationTr || '-'
+function helperAnswer(item?: AssistEvent | null): string {
+  return item?.helperAnswerTr || item?.questionTr || '-'
 }
 
-function profileSyncMark(state: string | undefined): string {
-  if (state === 'done') return 'OK'
-  if (state === 'error') return '!'
-  if (state === 'running') return '...'
-  return '-'
+function reviewLabelOf(item?: AssistEvent | null): ReviewLabel {
+  return item?.reviewLabel || 'unreviewed'
+}
+
+function reviewTagsFor(label: ReviewLabel): string[] {
+  if (label === 'chosen') return CHOSEN_TAGS
+  if (label === 'rejected') return REJECTED_TAGS
+  return []
 }
 
 export function ControlView(): React.JSX.Element {
   const {
-    settings,
-    session,
-    audioSources,
-    selectedSystemSourceId,
-    transcripts,
-    assistUpdates,
-    sttRuntimeStatus,
-    captureDiagnostics,
-    profileSnapshot,
-    profileSyncStatus,
-    interviewContextPreview,
-    error,
-    setError,
-    patchSettings,
-    setSettings,
-    setAudioSources,
-    setSelectedSystemSourceId,
-    setCaptureDiagnostics,
-    setProfileSnapshot,
-    setInterviewContextPreview
+    settings, session, audioSources, selectedSystemSourceId, transcripts, assistUpdates, sttRuntimeStatus,
+    captureDiagnostics, latencyMetrics, profileSnapshot, interviewContextPreview, historySessions, error,
+    setError, patchSettings, setSettings, setAudioSources, setSelectedSystemSourceId, setCaptureDiagnostics,
+    setProfileSnapshot, setInterviewContextPreview, setHistoryList
   } = useAppStore()
 
   const audioRef = useRef<MeetingAudioCapture | null>(null)
+  const [infoMessage, setInfoMessage] = useState<string | null>(null)
   const [savingSettings, setSavingSettings] = useState(false)
   const [refreshingSources, setRefreshingSources] = useState(false)
-  const [redetectingSource, setRedetectingSource] = useState(false)
-  const [infoMessage, setInfoMessage] = useState<string | null>(null)
-  const [githubUsername, setGithubUsername] = useState('')
-  const [jobDescInput, setJobDescInput] = useState('')
-  const [cvInput, setCvInput] = useState('')
-  const [linkedinInput, setLinkedinInput] = useState('')
-  const [noteInput, setNoteInput] = useState('')
-  const [knowledgeBaseInput, setKnowledgeBaseInput] = useState('')
-  const [previewQuery, setPreviewQuery] = useState('')
+  const [refreshingHistory, setRefreshingHistory] = useState(false)
   const [syncingGithub, setSyncingGithub] = useState(false)
-  const [syncingWebCorpus, setSyncingWebCorpus] = useState(false)
-  const [ingestingGlossary, setIngestingGlossary] = useState(false)
-  const [importingProfile, setImportingProfile] = useState(false)
-  const [importingProfileFile, setImportingProfileFile] = useState(false)
-  const [reindexingProfile, setReindexingProfile] = useState(false)
+  const [importingFile, setImportingFile] = useState(false)
+  const [loadingHistoryDetail, setLoadingHistoryDetail] = useState(false)
+  const [savingReviewAssistId, setSavingReviewAssistId] = useState<string | null>(null)
+  const [selectedHistorySessionId, setSelectedHistorySessionId] = useState('')
+  const [selectedHistoryRecord, setSelectedHistoryRecord] = useState<SessionHistoryRecord | null>(null)
+  const [githubUsername, setGithubUsername] = useState('')
+  const [cvInput, setCvInput] = useState('')
+  const [jobDescInput, setJobDescInput] = useState('')
+  const [noteInput, setNoteInput] = useState('')
+  const [previewQuery, setPreviewQuery] = useState('')
+  const [practicePrompt, setPracticePrompt] = useState('')
   const [fileImportType, setFileImportType] = useState<ProfileSourceType>('cv')
-  const [fileImportName, setFileImportName] = useState('')
-  const [manualPrompt, setManualPrompt] = useState('')
-  const [manualPromptLanguage, setManualPromptLanguage] = useState<'auto' | 'tr' | 'en'>('auto')
-  const [manualRunning, setManualRunning] = useState(false)
 
   useEffect(() => {
+    void refreshHistory()
     return () => {
       if (audioRef.current) {
         void audioRef.current.stop()
@@ -90,122 +77,76 @@ export function ControlView(): React.JSX.Element {
     }
   }, [])
 
-  useEffect(() => {
-    if (!session.active) {
-      setCaptureDiagnostics(null)
-    }
-  }, [session.active, setCaptureDiagnostics])
-
-  const sessionBusy = session.phase === 'starting' || session.phase === 'stopping'
-
-  const sourceLabelById = useMemo(() => {
-    const map = new Map<string, string>()
-    for (const source of audioSources) {
-      map.set(source.id, source.name)
-    }
-    return map
-  }, [audioSources])
-
-  const activeSourceLabel = useMemo(() => {
-    if (!settings) return 'Hazirlaniyor...'
-
-    if (settings.systemAudioMode === 'auto') {
-      if (!selectedSystemSourceId) return 'Otomatik secim bekleniyor'
-      return sourceLabelById.get(selectedSystemSourceId) || selectedSystemSourceId
-    }
-
-    const manualId = selectedSystemSourceId || settings.manualSystemSourceId
-    if (!manualId) return 'Manuel kaynak secilmedi'
-    return sourceLabelById.get(manualId) || manualId
-  }, [settings, selectedSystemSourceId, sourceLabelById])
-
+  const activeQuestion = useMemo(() => [...transcripts].reverse().find((item) => item.speaker === 'remote') || null, [transcripts])
+  const activeAssist = useMemo(() => [...assistUpdates].reverse().find((item) => item.state !== 'error') || null, [assistUpdates])
+  const timeline = useMemo(() => transcripts.slice(-6).reverse(), [transcripts])
   const runtimeSummary = useMemo(() => {
-    if (!sttRuntimeStatus) {
-      return 'Runtime hazirlaniyor...'
-    }
-
-    const device = sttRuntimeStatus.activeDevice || 'unknown'
-    const compute = sttRuntimeStatus.computeType || 'n/a'
-    const warmup = sttRuntimeStatus.warmupMs === null ? 'n/a' : `${Math.round(sttRuntimeStatus.warmupMs)} ms`
-    return `${sttRuntimeStatus.phase} | ${device}/${compute} | warmup: ${warmup}`
+    if (!sttRuntimeStatus) return 'warming'
+    return `${sttRuntimeStatus.phase} | ${sttRuntimeStatus.activeDevice || 'unknown'} | warmup ${sttRuntimeStatus.warmupMs === null ? 'n/a' : `${Math.round(sttRuntimeStatus.warmupMs)} ms`}`
   }, [sttRuntimeStatus])
+  const latencySummary = useMemo(() => {
+    if (!latencyMetrics) return 'No latency data yet'
+    const ttft = latencyMetrics.assistFirstTokenMs.p50 === null ? 'n/a' : `${Math.round(latencyMetrics.assistFirstTokenMs.p50)} ms`
+    const final = latencyMetrics.assistFinalMs.p50 === null ? 'n/a' : `${Math.round(latencyMetrics.assistFinalMs.p50)} ms`
+    return `TTFT ${ttft} | Final ${final}`
+  }, [latencyMetrics])
+  const selectedHistorySummary = useMemo(() => historySessions.find((item) => item.id === selectedHistorySessionId) || null, [historySessions, selectedHistorySessionId])
+  const reviewedAssists = useMemo(() => [...(selectedHistoryRecord?.assists || [])].filter((item) => item.state !== 'partial').reverse(), [selectedHistoryRecord])
 
-  const runtimeWarning = useMemo(() => {
-    if (!session.active && session.phase !== 'starting') return null
-    if (!settings || !sttRuntimeStatus) return null
-
-    if (
-      sttRuntimeStatus.activeDevice === 'cpu' &&
-      settings.sttRuntimeMode !== 'cpu' &&
-      sttRuntimeStatus.fallbackToCpuCount > 0
-    ) {
-      return 'CUDA hatasi nedeniyle STT CPU fallback modunda calisiyor.'
+  const refreshSources = async (): Promise<void> => {
+    try {
+      setRefreshingSources(true)
+      setAudioSources(await window.api.getAudioSources())
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Audio sources could not be loaded.')
+    } finally {
+      setRefreshingSources(false)
     }
+  }
 
-    if (sttRuntimeStatus.phase === 'degraded' && sttRuntimeStatus.lastError) {
-      return sttRuntimeStatus.lastError
+  const refreshProfileState = async (): Promise<void> => {
+    const [snapshot, preview] = await Promise.all([
+      window.api.getProfileSnapshot(),
+      window.api.getInterviewContextPreview(previewQuery || '')
+    ])
+    setProfileSnapshot(snapshot)
+    setInterviewContextPreview(preview)
+  }
+
+  const loadHistoryDetail = async (sessionId: string): Promise<void> => {
+    if (!sessionId.trim()) {
+      setSelectedHistorySessionId('')
+      setSelectedHistoryRecord(null)
+      return
     }
-
-    return null
-  }, [session.active, session.phase, settings, sttRuntimeStatus])
-
-  const captureWarning = useMemo(() => {
-    if (!session.active && session.phase !== 'starting') return null
-    if (!captureDiagnostics?.lastErrorMessage) return null
-    if (captureDiagnostics.lastErrorCode === 'microphone_unavailable') return null
-    const code = captureDiagnostics.lastErrorCode ? `[${captureDiagnostics.lastErrorCode}] ` : ''
-    return `${code}${captureDiagnostics.lastErrorMessage}`
-  }, [captureDiagnostics, session.active, session.phase])
-
-  const captureInfo = useMemo(() => {
-    if (!session.active && session.phase !== 'starting') return null
-    if (!captureDiagnostics?.lastErrorMessage) return null
-    if (captureDiagnostics.lastErrorCode !== 'microphone_unavailable') return null
-    return captureDiagnostics.lastErrorMessage
-  }, [captureDiagnostics, session.active, session.phase])
-
-  const sessionDegradedHint = useMemo(() => {
-    if (!session.active && session.phase !== 'starting' && session.phase !== 'degraded') return null
-    if (!session.degradedCode) return null
-    if (session.degradedCode === 'cuda_fallback') {
-      return 'Oturum CPU fallback modunda calisiyor (CUDA kullanilamadi).'
+    try {
+      setLoadingHistoryDetail(true)
+      setSelectedHistorySessionId(sessionId)
+      const result = await window.api.getHistorySessionDetail(sessionId)
+      setSelectedHistoryRecord(result.record)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Session detail could not be loaded.')
+    } finally {
+      setLoadingHistoryDetail(false)
     }
-    if (session.degradedCode === 'assist_quality_retry') {
-      return 'Asistan kaliteyi korumak icin ek duzeltme denemesi yapiyor.'
-    }
-    if (session.degradedCode === 'audio_source_fallback') {
-      return 'Sistem ses kaynagi fallback ile degistirildi.'
-    }
-    return null
-  }, [session.active, session.phase, session.degradedCode])
+  }
 
-  const assistByTranscript = useMemo(() => {
-    const map = new Map<string, (typeof assistUpdates)[number]>()
-    for (const item of assistUpdates) {
-      if (item.state === 'error') continue
-      const prev = map.get(item.transcriptId)
-      if (!prev) {
-        map.set(item.transcriptId, item)
-        continue
+  const refreshHistory = async (): Promise<void> => {
+    try {
+      setRefreshingHistory(true)
+      setHistoryList(await window.api.listHistorySessions())
+      if (selectedHistorySessionId) {
+        const result = await window.api.getHistorySessionDetail(selectedHistorySessionId)
+        setSelectedHistoryRecord(result.record)
       }
-      if (prev.state === 'partial' && item.state === 'final') {
-        map.set(item.transcriptId, item)
-        continue
-      }
-      if (item.state === prev.state) {
-        map.set(item.transcriptId, item)
-      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'History could not be loaded.')
+    } finally {
+      setRefreshingHistory(false)
     }
-    return map
-  }, [assistUpdates])
+  }
 
-  const transcriptFeed = useMemo(() => transcripts.slice(-240).reverse(), [transcripts])
-  const assistFeed = useMemo(
-    () => assistUpdates.filter((item) => item.state !== 'partial').slice(-240).reverse(),
-    [assistUpdates]
-  )
-
-  const stopSessionInternal = async (errorMessage?: string): Promise<void> => {
+  const stopSession = async (message?: string): Promise<void> => {
     try {
       if (audioRef.current) {
         await audioRef.current.stop()
@@ -214,1134 +155,339 @@ export function ControlView(): React.JSX.Element {
       await window.api.stopSession()
       setCaptureDiagnostics(null)
     } finally {
-      if (errorMessage) {
-        setError(errorMessage)
-      }
-    }
-  }
-
-  const refreshSources = async (): Promise<void> => {
-    try {
-      setRefreshingSources(true)
-      const sources = await window.api.getAudioSources()
-      setAudioSources(sources)
-      setError(null)
-    } catch (sourceError) {
-      setError(sourceError instanceof Error ? sourceError.message : 'Kaynak listesi alinamadi.')
-    } finally {
-      setRefreshingSources(false)
+      if (message) setError(message)
     }
   }
 
   const startSession = async (): Promise<void> => {
-    if (!settings || sessionBusy || session.active) return
-
+    if (!settings || session.active || session.phase === 'starting' || session.phase === 'stopping') return
     try {
-      setError(null)
-      setInfoMessage(null)
       const strategy: SystemAudioStrategy =
-        settings.systemAudioMode === 'manual'
-          ? 'manual'
-          : settings.systemAudioStrategy === 'picker_each_start'
-            ? 'picker_each_start'
-            : 'auto_live'
-
-      const manualSourceId =
-        settings.systemAudioMode === 'manual'
-          ? selectedSystemSourceId || settings.manualSystemSourceId
-          : undefined
-
-      if (settings.systemAudioMode === 'manual' && !manualSourceId) {
-        throw new Error('Manuel mod icin bir sistem ses kaynagi secin.')
-      }
-
-      await window.api.startSession({
-        mode: 'meeting',
-        sttModel: settings.sttModel,
-        sttRuntimeMode: settings.sttRuntimeMode,
-        sttLanguageMode: settings.sttLanguageMode,
-        manualSttLanguage: settings.manualSttLanguage,
-        vad: settings.vad
-      })
-
+        settings.systemAudioStrategy === 'manual' ? 'manual' : settings.systemAudioStrategy === 'picker_each_start' ? 'picker_each_start' : 'auto_live'
+      const manualSourceId = settings.systemAudioStrategy === 'manual' ? selectedSystemSourceId || settings.manualSystemSourceId : undefined
+      await window.api.startSession({ mode: settings.productMode, sttModel: settings.sttModel, sttRuntimeMode: settings.sttRuntimeMode, vad: settings.vad })
       const capture = new MeetingAudioCapture()
-      await capture.start({
-        systemSourceId: manualSourceId,
-        strategy,
-        captureMicrophone: settings.captureMicrophone,
-        onChunk: (chunk) => {
-          window.api.sendAudioChunk(chunk)
-        },
-        onDiagnostics: (diagnostics) => {
-          useAppStore.getState().setCaptureDiagnostics(diagnostics)
-        },
-        onSourceChanged: (source) => {
-          setSelectedSystemSourceId(source.id)
-          patchSettings({ manualSystemSourceId: source.id })
-          setInfoMessage(`Sistem sesi kaynagi: ${source.name}`)
-        },
-        onFatalError: (fatalError) => {
-          void stopSessionInternal(fatalError.message)
-        }
-      })
-
       audioRef.current = capture
-
-      if (settings.autoHideControlWindow) {
-        await window.api.hideControlWindow()
-      }
-    } catch (startError) {
-      await stopSessionInternal(
-        startError instanceof Error ? startError.message : 'Oturum baslatilamadi.'
-      )
+      await capture.start({
+        strategy,
+        systemSourceId: manualSourceId,
+        captureMicrophone: settings.captureMicrophone,
+        onChunk: (chunk) => window.api.sendAudioChunk(chunk),
+        onDiagnostics: (event) => setCaptureDiagnostics(event),
+        onSourceChanged: (source) => setSelectedSystemSourceId(source.id),
+        onFatalError: (fatalError) => { void stopSession(fatalError.message) }
+      })
+      if (settings.autoHideControlWindow) await window.api.hideControlWindow()
+    } catch (err) {
+      await stopSession(err instanceof Error ? err.message : 'Session start failed.')
     }
   }
 
-  const redetectSystemSource = async (): Promise<void> => {
-    if (!session.active || sessionBusy || !audioRef.current) return
-
-    try {
-      setRedetectingSource(true)
-      setError(null)
-      const switched = await audioRef.current.redetectAudioSource()
-      if (switched) {
-        setInfoMessage('Sistem ses kaynagi yeniden algilandi ve guncellendi.')
-      } else {
-        setInfoMessage('Daha iyi bir kaynak bulunamadi, mevcut kaynak korunuyor.')
-      }
-    } catch (redetectError) {
-      setError(
-        redetectError instanceof Error
-          ? redetectError.message
-          : 'Sistem ses kaynagi yeniden algilanamadi.'
-      )
-    } finally {
-      setRedetectingSource(false)
-    }
-  }
-
-  const stopSession = async (): Promise<void> => {
-    if (sessionBusy) return
-
-    try {
-      await stopSessionInternal()
-      setInfoMessage(null)
-    } catch (stopError) {
-      setError(stopError instanceof Error ? stopError.message : 'Oturum durdurulamadi.')
-    }
-  }
-
-  const persistSettings = async (): Promise<void> => {
+  const saveSettings = async (): Promise<void> => {
     if (!settings) return
-
     try {
       setSavingSettings(true)
       const saved = await window.api.updateSettings(settings)
       setSettings(saved)
-      setError(null)
-      setInfoMessage('Ayarlar kaydedildi.')
-    } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : 'Ayarlar kaydedilemedi.')
+      setInfoMessage('Settings saved.')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Settings could not be saved.')
     } finally {
       setSavingSettings(false)
     }
   }
 
-  const hidePanel = async (): Promise<void> => {
+  const importText = async (type: ProfileSourceType, content: string, clear: () => void): Promise<void> => {
+    if (!content.trim()) return
     try {
-      await window.api.hideControlWindow()
-    } catch (hideError) {
-      setError(hideError instanceof Error ? hideError.message : 'Panel gizlenemedi.')
-    }
-  }
-
-  const toggleOverlayVisibility = async (): Promise<void> => {
-    if (!settings) return
-
-    try {
-      const nextVisible = !settings.overlayVisible
-      patchSettings({ overlayVisible: nextVisible })
-      await window.api.setOverlay({ visible: nextVisible })
-    } catch (overlayError) {
-      setError(overlayError instanceof Error ? overlayError.message : 'Overlay guncellenemedi.')
-    }
-  }
-
-  const setOverlayOpacity = async (value: number): Promise<void> => {
-    try {
-      patchSettings({ overlayOpacity: value })
-      await window.api.setOverlay({ opacity: value })
-    } catch (overlayError) {
-      setError(overlayError instanceof Error ? overlayError.message : 'Overlay opakligi guncellenemedi.')
-    }
-  }
-
-  const setOverlayClickThrough = async (clickThrough: boolean): Promise<void> => {
-    try {
-      patchSettings({ overlayClickThrough: clickThrough })
-      await window.api.setOverlay({ clickThrough })
-    } catch (overlayError) {
-      setError(
-        overlayError instanceof Error ? overlayError.message : 'Overlay tiklama modu guncellenemedi.'
-      )
-    }
-  }
-
-  const toggleAssistantMute = async (): Promise<void> => {
-    try {
-      const result = await window.api.toggleAssistantMute()
-      setInfoMessage(result.muted ? 'Asistan sessize alindi.' : 'Asistan tekrar aktif.')
-    } catch (muteError) {
-      setError(muteError instanceof Error ? muteError.message : 'Asistan sessiz modu degistirilemedi.')
-    }
-  }
-
-  const refreshProfileSnapshot = async (): Promise<void> => {
-    const snapshot = await window.api.getProfileSnapshot()
-    setProfileSnapshot(snapshot)
-  }
-
-  const refreshContextPreview = async (query = previewQuery): Promise<void> => {
-    const preview = await window.api.getInterviewContextPreview(query || '')
-    setInterviewContextPreview(preview)
-  }
-
-  const importProfileText = async (type: ProfileSourceType, content: string, name: string): Promise<void> => {
-    if (!content.trim()) {
-      setError('Icerik bos olamaz.')
-      return
-    }
-
-    try {
-      setImportingProfile(true)
-      setError(null)
-      await window.api.importProfileSource({
-        type,
-        name,
-        content
-      })
-      await refreshProfileSnapshot()
-      await refreshContextPreview()
-      setInfoMessage(`${name} kaynagi eklendi.`)
-    } catch (importError) {
-      setError(importError instanceof Error ? importError.message : 'Kaynak eklenemedi.')
-    } finally {
-      setImportingProfile(false)
-    }
-  }
-
-  const importProfileFile = async (): Promise<void> => {
-    try {
-      setImportingProfileFile(true)
-      setError(null)
-      const result = await window.api.importProfileFile({
-        type: fileImportType,
-        name: fileImportName.trim() || undefined,
-        ocrMode: 'auto'
-      })
-
-      if (result.cancelled) {
-        setInfoMessage('Dosya secimi iptal edildi.')
-        return
-      }
-
-      if (!result.success) {
-        setError('Dosya import basarisiz.')
-        return
-      }
-
-      await refreshProfileSnapshot()
-      await refreshContextPreview()
-      const parserLabel = result.parser || 'text'
-      const ocrLabel = result.ocrUsed ? 'OCR acik' : 'OCR gerekmiyor'
-      const warningText =
-        result.warnings && result.warnings.length > 0 ? ` | ${result.warnings.join(' | ')}` : ''
-      setInfoMessage(`Dosya eklendi (${parserLabel}, ${ocrLabel}).${warningText}`)
-      if (fileImportName.trim()) {
-        setFileImportName('')
-      }
-    } catch (importError) {
-      setError(importError instanceof Error ? importError.message : 'Dosya import basarisiz.')
-    } finally {
-      setImportingProfileFile(false)
-    }
-  }
-
-  const runManualAssist = async (): Promise<void> => {
-    const text = manualPrompt.trim()
-    if (!text) {
-      setError('Manuel test sorusu bos olamaz.')
-      return
-    }
-
-    try {
-      setManualRunning(true)
-      setError(null)
-      await window.api.generateManualAssist({
-        text,
-        language: manualPromptLanguage === 'auto' ? undefined : manualPromptLanguage,
-        speaker: 'remote'
-      })
-      setInfoMessage('Manuel test sorusu islendi, assist cevabi akis ekranina eklendi.')
-    } catch (manualError) {
-      setError(manualError instanceof Error ? manualError.message : 'Manuel assist testi basarisiz.')
-    } finally {
-      setManualRunning(false)
+      await window.api.importProfileSource({ type, name: SOURCE_LABEL[type], content: content.trim() })
+      clear()
+      await refreshProfileState()
+      setInfoMessage(`${SOURCE_LABEL[type]} imported.`)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : `${SOURCE_LABEL[type]} import failed.`)
     }
   }
 
   const syncGithub = async (): Promise<void> => {
-    if (!githubUsername.trim()) {
-      setError('GitHub kullanici adi girin.')
-      return
-    }
-
+    if (!githubUsername.trim()) return
     try {
       setSyncingGithub(true)
-      setError(null)
       await window.api.syncGithubProfile({ username: githubUsername.trim() })
-      await refreshProfileSnapshot()
-      await refreshContextPreview()
-      setInfoMessage('GitHub senkron tamamlandi.')
-    } catch (syncError) {
-      setError(syncError instanceof Error ? syncError.message : 'GitHub senkronu basarisiz.')
+      await refreshProfileState()
+      setInfoMessage('GitHub synced.')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'GitHub sync failed.')
     } finally {
       setSyncingGithub(false)
     }
   }
-
-  const syncWebCorpus = async (): Promise<void> => {
+  const importFile = async (): Promise<void> => {
     try {
-      setSyncingWebCorpus(true)
-      setError(null)
-      const result = await window.api.syncWebCorpus({
-        includeSearch: true,
-        importLimit: 140,
-        maxDocs: 220,
-        maxPerCategory: 40,
-        buildGlossary: true
+      setImportingFile(true)
+      const result = await window.api.importProfileFile({ type: fileImportType })
+      if (!result.cancelled) {
+        await refreshProfileState()
+        setInfoMessage(`${SOURCE_LABEL[fileImportType]} file imported.`)
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'File import failed.')
+    } finally {
+      setImportingFile(false)
+    }
+  }
+
+  const runPractice = async (): Promise<void> => {
+    if (!practicePrompt.trim()) return
+    try {
+      await window.api.generatePracticeAnswer({ text: practicePrompt.trim(), language: 'en', speaker: 'remote' })
+      setPracticePrompt('')
+      setInfoMessage('Practice answer generated.')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Practice answer failed.')
+    }
+  }
+
+  const exportHistory = async (format: 'json' | 'markdown', sessionId?: string): Promise<void> => {
+    try {
+      const result = await window.api.exportSessionHistory({ format, sessionId })
+      setInfoMessage(`Exported to ${result.path}`)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Export failed.')
+    }
+  }
+
+  const updateAssistReview = async (assistId: string, reviewLabel: ReviewLabel, reviewTags?: string[]): Promise<void> => {
+    if (!selectedHistorySessionId || !selectedHistoryRecord) return
+    const assist = selectedHistoryRecord.assists.find((item) => item.id === assistId)
+    if (!assist) return
+
+    try {
+      setSavingReviewAssistId(assistId)
+      await window.api.updateAssistReview({
+        sessionId: selectedHistorySessionId,
+        assistId,
+        reviewLabel,
+        reviewTags,
+        reviewComment: assist.reviewComment,
+        reviewSource: 'ui'
       })
-      await refreshProfileSnapshot()
-      await refreshContextPreview()
-      const glossaryNote =
-        result.glossaryTerms && result.glossaryTerms > 0
-          ? ` | glossary: ${result.glossaryTerms}`
-          : ''
-      setInfoMessage(
-        `Web corpus senkron tamamlandi | docs: ${result.documentCount} | import: ${result.importedSources}${glossaryNote}`
-      )
-    } catch (syncError) {
-      setError(syncError instanceof Error ? syncError.message : 'Web corpus senkronu basarisiz.')
+      await refreshHistory()
+      await loadHistoryDetail(selectedHistorySessionId)
+      setInfoMessage('Review saved.')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Review update failed.')
     } finally {
-      setSyncingWebCorpus(false)
+      setSavingReviewAssistId(null)
     }
   }
 
-  const ingestGlossary = async (): Promise<void> => {
-    try {
-      setIngestingGlossary(true)
-      setError(null)
-      const result = await window.api.ingestGlossary({
-        maxTerms: 600
-      })
-      await refreshProfileSnapshot()
-      await refreshContextPreview()
-      setInfoMessage(`Glossary import tamamlandi | terms: ${result.importedTerms}`)
-    } catch (ingestError) {
-      setError(ingestError instanceof Error ? ingestError.message : 'Glossary import basarisiz.')
-    } finally {
-      setIngestingGlossary(false)
+  const toggleReviewTag = async (assist: AssistEvent, tag: string): Promise<void> => {
+    const label = reviewLabelOf(assist)
+    if (label !== 'chosen' && label !== 'rejected') return
+    const current = new Set((assist.reviewTags || []).map((item) => item.trim()).filter(Boolean))
+    if (current.has(tag)) {
+      current.delete(tag)
+    } else {
+      current.add(tag)
     }
-  }
-
-  const reindexProfile = async (): Promise<void> => {
-    try {
-      setReindexingProfile(true)
-      setError(null)
-      await window.api.reindexProfileMemory()
-      await refreshProfileSnapshot()
-      await refreshContextPreview()
-      setInfoMessage('Profil bellek reindex tamamlandi.')
-    } catch (reindexError) {
-      setError(reindexError instanceof Error ? reindexError.message : 'Reindex basarisiz.')
-    } finally {
-      setReindexingProfile(false)
-    }
-  }
-
-  const removeProfileSource = async (sourceId: string): Promise<void> => {
-    try {
-      setError(null)
-      await window.api.clearProfileSource({ sourceId })
-      await refreshProfileSnapshot()
-      await refreshContextPreview()
-    } catch (removeError) {
-      setError(removeError instanceof Error ? removeError.message : 'Kaynak silinemedi.')
-    }
+    await updateAssistReview(assist.id, label, Array.from(current))
   }
 
   if (!settings) {
-    return (
-      <div className="app-shell">
-        <div className="glass card">Ayarlar yukleniyor...</div>
-      </div>
-    )
+    return <div className="control-shell"><div className="control-card hero-card">Loading interview workspace...</div></div>
   }
 
+  const activePreset = PROFILE_PRESETS.find((item) => item.id === settings.inferenceProfileId) || PROFILE_PRESETS[0]
+
   return (
-    <div className="app-shell minimal-shell">
-      <div className="glass header-card minimal-header">
-        <div className="header-meta">
-          <div className="title">LiveTranslate Control</div>
-          <div className="subtitle">
-            Durum: {session.phase} | Aktif: {session.active ? 'evet' : 'hayir'} | Worker:{' '}
-            {session.workerReady ? 'hazir' : 'hazir degil'} | Asistan:{' '}
-            {session.muted ? 'sessizde' : 'aktif'}
-          </div>
-          {session.lastError && <div className="subtitle">Son hata: {session.lastError}</div>}
+    <div className="control-shell">
+      <section className="control-card hero-card">
+        <div>
+          <div className="eyebrow">Interview Copilot</div>
+          <h1>English-first, persona-grounded, low-latency live assist.</h1>
+          <p className="hero-copy">The core answer path is English only. Turkish is a hidden helper layer, never the primary output.</p>
         </div>
-
-        <div className="row header-actions">
-          {session.active ? (
-            <button className="danger" onClick={stopSession} disabled={sessionBusy}>
-              Durdur
-            </button>
-          ) : (
-            <button className="primary" onClick={startSession} disabled={sessionBusy}>
-              Baslat
-            </button>
-          )}
-
-          <button onClick={toggleOverlayVisibility}>
-            Overlay {settings.overlayVisible ? 'Gizle' : 'Goster'}
-          </button>
-          <button onClick={toggleAssistantMute}>
-            {session.muted ? 'Asistani Ac' : 'Asistani Sessize Al'}
-          </button>
-          <button onClick={hidePanel}>Paneli Gizle</button>
+        <div className="hero-meta">
+          <div className="metric-pill"><span>Profile</span><strong>{activePreset.title}</strong></div>
+          <div className="metric-pill"><span>STT</span><strong>{settings.sttModel}</strong></div>
+          <div className="metric-pill"><span>Mode</span><strong>{settings.productMode}</strong></div>
         </div>
-      </div>
+      </section>
 
-      <div className="status-stack">
-        {error && <div className="error">{error}</div>}
-        {session.muted && (
-          <div className="error">Asistan sessizde. TR ceviri/yanit uretilmesi icin Asistani Ac yapin.</div>
-        )}
-        {runtimeWarning && <div className="error">{runtimeWarning}</div>}
-        {sessionDegradedHint && <div className="subtitle status-note">{sessionDegradedHint}</div>}
-        {captureWarning && <div className="error">{captureWarning}</div>}
-        {captureInfo && <div className="subtitle status-note">{captureInfo}</div>}
-        {!settings.captureMicrophone && (
-          <div className="subtitle status-note">
-            Mikrofon yakalama kapali (remote-only). Hoparlor sizintisinin self olarak algilanmasi
-            engellenir.
-          </div>
-        )}
-        {infoMessage && <div className="subtitle status-note">{infoMessage}</div>}
-      </div>
-
-      <div className="grid minimal-grid">
-        <div className="glass card">
-          <div className="explain-block">
-            <div className="explain-title">Bu Alanlar Ne Ise Yarar?</div>
-            <div className="subtitle">
-              System Audio: Karsi tarafin hoparlore gelen sesini alir.
+      <section className="control-grid compact-grid">
+        <div className="column-stack">
+          <article className="control-card session-card">
+            <div className="section-head">
+              <div><div className="section-kicker">Session</div><h2>Live Interview</h2></div>
+              <div className={`state-badge state-${session.phase}`}>{session.phase}</div>
             </div>
-            <div className="subtitle">
-              STT Model: Sesi metne cevirir (Speech-to-Text).
+            <div className="chip-row">
+              <button className="primary-btn" disabled={session.active} onClick={() => void startSession()}>Start Live</button>
+              <button className="ghost-btn" disabled={!session.active} onClick={() => void stopSession()}>Stop</button>
+              <button className="ghost-btn" onClick={() => void window.api.toggleAssistantMute()}>{session.muted ? 'Unmute' : 'Mute'}</button>
+              <button className="ghost-btn" onClick={() => void window.api.setOverlay({ visible: !settings.overlayVisible })}>{settings.overlayVisible ? 'Hide Overlay' : 'Show Overlay'}</button>
             </div>
-            <div className="subtitle">
-              Answer Model: Ceviri ve cevap onerisi uretir.
+            <div className="status-list">
+              <div className="status-item"><span>Runtime</span><strong>{runtimeSummary}</strong></div>
+              <div className="status-item"><span>Latency</span><strong>{latencySummary}</strong></div>
+              <div className="status-item"><span>Source</span><strong>{selectedSystemSourceId || 'auto'}</strong></div>
+              <div className="status-item"><span>Capture</span><strong>{captureDiagnostics?.sourceHealth || 'healthy'}</strong></div>
             </div>
-          </div>
+            {error && <div className="warning-note">{error}</div>}
+            {infoMessage && <div className="info-note">{infoMessage}</div>}
+          </article>
 
-          <h3>System Audio</h3>
-          <div className="subtitle">
-            Varsayilan davranis otomatiktir. Uygulama uygun ekran kaynagini kendi secer ve oturum
-            sirasinda koparsa baska uygun kaynaga gecebilir.
-          </div>
-          <div className="subtitle">
-            Manual moda sadece otomatik secim sizin senaryonuzda dogru kaynagi bulamazsa gecin.
-          </div>
-          <div className="row form-row" style={{ marginTop: 8 }}>
-            <label className="control-label">Aktif Kaynak</label>
-            <div className="subtitle value-text">
-              {activeSourceLabel}
+          <article className="control-card answer-card">
+            <div className="section-head">
+              <div><div className="section-kicker">Live Answer</div><h2>Current Output</h2></div>
+              <div className={`confidence-chip confidence-${activeAssist?.supportSignals?.confidenceBand || 'medium'}`}>{activeAssist?.supportSignals?.confidenceBand || 'medium'}</div>
             </div>
-          </div>
-
-          <h3 style={{ marginTop: 12 }}>Model Ayarlari</h3>
-          <div className="subtitle">
-            STT Model gelen sesi yaziya cevirir. Kucuk modeller daha hizli, buyuk modeller genelde
-            daha dogru ama daha agir calisir.
-          </div>
-          <div className="subtitle">Answer Model, metne gore ceviri ve yanit onerisi uretir.</div>
-
-          <div className="row form-row" style={{ marginTop: 8 }}>
-            <label className="control-label">STT Model</label>
-            <input value={settings.sttModel} onChange={(e) => patchSettings({ sttModel: e.target.value })} />
-          </div>
-
-          <div className="row form-row">
-            <label className="control-label">Answer Model</label>
-            <input
-              value={settings.answerModel}
-              onChange={(e) => patchSettings({ answerModel: e.target.value })}
-            />
-          </div>
-          <div className="row form-row">
-            <label className="control-label">Assistant Mode</label>
-            <select
-              value={settings.assistantMode}
-              onChange={(e) =>
-                patchSettings({
-                  assistantMode: e.target.value === 'interview' ? 'interview' : 'meeting'
-                })
-              }
-              disabled={sessionBusy}
-            >
-              <option value="meeting">Meeting</option>
-              <option value="interview">Interview</option>
-            </select>
-          </div>
-          <div className="row inline-checks">
-            <label className="check-label">
-              <input
-                type="checkbox"
-                checked={settings.personalizationEnabled}
-                onChange={(e) => patchSettings({ personalizationEnabled: e.target.checked })}
-              />{' '}
-              Kisisellestirme acik
-            </label>
-            <label className="check-label">
-              <input
-                type="checkbox"
-                checked={settings.githubSyncEnabled}
-                onChange={(e) => patchSettings({ githubSyncEnabled: e.target.checked })}
-              />{' '}
-              GitHub senkron acik
-            </label>
-          </div>
-          <div className="row form-row">
-            <label className="control-label">Kisisellestirme Politikasi</label>
-            <select
-              value={settings.assistPersonalizationPolicy}
-              onChange={(e) =>
-                patchSettings({
-                  assistPersonalizationPolicy:
-                    (e.target.value === 'always' ? 'always' : 'intent_aware') as AssistPersonalizationPolicy
-                })
-              }
-              disabled={sessionBusy}
-            >
-              <option value="intent_aware">Intent Aware (onerilen)</option>
-              <option value="always">Her zaman profil kullan</option>
-            </select>
-          </div>
-          <div className="row form-row">
-            <label className="control-label">Cevap Kompozisyonu</label>
-            <select
-              value={settings.assistCompositionPolicy}
-              onChange={(e) =>
-                patchSettings({
-                  assistCompositionPolicy:
-                    (e.target.value === 'general_then_profile'
-                      ? 'general_then_profile'
-                      : e.target.value === 'profile_only'
-                        ? 'profile_only'
-                        : 'auto') as AssistCompositionPolicy
-                })
-              }
-              disabled={sessionBusy}
-            >
-              <option value="auto">Auto</option>
-              <option value="general_then_profile">Genel sonra profil</option>
-              <option value="profile_only">Sadece profil</option>
-            </select>
-          </div>
-          <div className="row form-row">
-            <label className="control-label">Yanit Dil Politikasi</label>
-            <select
-              value={settings.assistLanguagePolicy}
-              onChange={(e) =>
-                patchSettings({
-                  assistLanguagePolicy:
-                    (e.target.value === 'tr'
-                      ? 'tr'
-                      : e.target.value === 'bilingual'
-                        ? 'bilingual'
-                        : 'auto') as AssistLanguagePolicy
-                })
-              }
-              disabled={sessionBusy}
-            >
-              <option value="auto">Auto</option>
-              <option value="tr">TR agirlikli</option>
-              <option value="bilingual">TR + EN</option>
-            </select>
-          </div>
-          <div className="row form-row">
-            <label className="control-label">Interview Style</label>
-            <select
-              value={settings.interviewAnswerStyle}
-              onChange={() => patchSettings({ interviewAnswerStyle: 'star_short_30s' })}
-              disabled
-            >
-              <option value="star_short_30s">Duz Orta-Uzun (90-140 kelime)</option>
-            </select>
-          </div>
-          <div className="row form-row">
-            <label className="control-label">STT Runtime</label>
-            <div className="subtitle value-text">
-              {runtimeSummary}
+            <div className="prompt-block"><span>Latest Question</span><p>{activeQuestion?.text || 'Waiting for interviewer audio...'}</p></div>
+            <div className="answer-block primary-answer"><span>Main English Answer</span><p>{mainAnswer(activeAssist)}</p></div>
+            <div className="answer-block secondary-answer"><span>Helper Layer</span><p>{helperAnswer(activeAssist)}</p></div>
+            <div className="chip-row">
+              <span className="soft-chip">context {activeAssist?.supportSignals?.contextHitCount ?? 0}</span>
+              <span className="soft-chip">risk {(activeAssist?.supportSignals?.riskFlags || []).join(', ') || 'clear'}</span>
+              <span className="soft-chip">ttft {activeAssist?.firstTokenMs ? `${Math.round(activeAssist.firstTokenMs)} ms` : 'n/a'}</span>
             </div>
-          </div>
-          {sttRuntimeStatus && (
-            <div className="subtitle">
-              CUDA detected: {sttRuntimeStatus.cudaDetected ? 'evet' : 'hayir'} | GPU count:{' '}
-              {sttRuntimeStatus.cudaDeviceCount} | CUDA retry: {sttRuntimeStatus.cudaRetryCount} |
-              CPU fallback: {sttRuntimeStatus.fallbackToCpuCount}
+          </article>
+
+          <article className="control-card timeline-card">
+            <div className="section-head">
+              <div><div className="section-kicker">Timeline</div><h2>Recent Turns</h2></div>
+              <button className="ghost-btn" disabled={refreshingHistory} onClick={() => void refreshHistory()}>{refreshingHistory ? 'Refreshing...' : 'Refresh History'}</button>
             </div>
-          )}
-          {captureDiagnostics && (
-            <div className="subtitle">
-              Capture: {captureDiagnostics.reconnectState} | switch count:{' '}
-              {captureDiagnostics.sourceSwitchCount || 0} | health:{' '}
-              {captureDiagnostics.sourceHealth || 'n/a'} | silence:{' '}
-              {Math.round((captureDiagnostics.remoteSilenceMs || 0) / 1000)}s | reason:{' '}
-              {captureDiagnostics.lastSwitchReason || '-'} | remote rms:{' '}
-              {Math.round(captureDiagnostics.remoteRms)} | self rms:{' '}
-              {Math.round(captureDiagnostics.selfRms)}
-            </div>
-          )}
-          {captureDiagnostics?.candidateScores && captureDiagnostics.candidateScores.length > 0 && (
-            <div className="subtitle">
-              Aday skorlar:{' '}
-              {captureDiagnostics.candidateScores
-                .map((item) => `${item.id}=${Math.round(item.score)}`)
-                .join(' | ')}
-            </div>
-          )}
-          <div className="subtitle">
-            Pratik: Konusma kaciriyorsa STT modelini buyutun. Yanit kalitesi dusukse Answer modelini
-            guclu bir modelle degistirin.
-          </div>
-
-          <div className="row" style={{ marginTop: 8 }}>
-            <button onClick={persistSettings} disabled={savingSettings}>
-              {savingSettings ? 'Kaydediliyor...' : 'Ayarlari Kaydet'}
-            </button>
-          </div>
-
-          <h3 style={{ marginTop: 8 }}>Interview Profile</h3>
-          <div className="subtitle">
-            CV/GitHub/LinkedIn/ilan verileri lokal bellekte tutulur ve Interview mode cevabina baglam olarak eklenir.
-          </div>
-          <div className="subtitle">
-            Manuel test: Soruyu buraya yazip assist cevabini ses acmadan olcebilirsiniz.
-          </div>
-          <div className="row form-row">
-            <label className="control-label">Manuel Test Dili</label>
-            <select
-              value={manualPromptLanguage}
-              onChange={(e) =>
-                setManualPromptLanguage(
-                  e.target.value === 'tr' ? 'tr' : e.target.value === 'en' ? 'en' : 'auto'
-                )
-              }
-              disabled={manualRunning || session.active}
-            >
-              <option value="auto">Auto</option>
-              <option value="tr">Turkce</option>
-              <option value="en">English</option>
-            </select>
-          </div>
-          <div className="row input-action-row">
-            <textarea
-              className="compact-textarea"
-              placeholder="Ornek: Can you describe a time you improved system reliability?"
-              value={manualPrompt}
-              onChange={(e) => setManualPrompt(e.target.value)}
-              disabled={manualRunning || session.active}
-            />
-            <button onClick={runManualAssist} disabled={manualRunning || session.active}>
-              {manualRunning ? 'Isleniyor...' : 'Manuel Assist Testi Calistir'}
-            </button>
-          </div>
-          {profileSyncStatus && (
-            <div className={`subtitle sync-status sync-status-${profileSyncStatus.state}`}>
-              <span className="sync-mark">{profileSyncMark(profileSyncStatus.state)}</span>
-              <span>
-                Profil senkron: {profileSyncStatus.state}
-                {profileSyncStatus.message ? ` | ${profileSyncStatus.message}` : ''}
-              </span>
-            </div>
-          )}
-          {profileSnapshot && (
-            <div className="subtitle">
-              Kaynak: {profileSnapshot.sourceCount} | Chunk: {profileSnapshot.chunkCount} | Guncel:{' '}
-              {new Date(profileSnapshot.updatedAtMs).toLocaleTimeString()}
-            </div>
-          )}
-
-          <div className="row input-action-row">
-            <select
-              value={fileImportType}
-              onChange={(e) => setFileImportType(e.target.value as ProfileSourceType)}
-              disabled={session.active || importingProfileFile}
-            >
-              <option value="cv">CV</option>
-              <option value="job_desc">Job Description</option>
-              <option value="linkedin">LinkedIn</option>
-              <option value="note">Note</option>
-              <option value="knowledge_base">Knowledge Base</option>
-              <option value="web_corpus">Web Corpus</option>
-              <option value="glossary">Glossary</option>
-            </select>
-            <input
-              placeholder="Kaynak adi (opsiyonel)"
-              value={fileImportName}
-              onChange={(e) => setFileImportName(e.target.value)}
-              disabled={session.active || importingProfileFile}
-            />
-            <button onClick={importProfileFile} disabled={session.active || importingProfileFile}>
-              {importingProfileFile ? 'Dosya okunuyor...' : 'Dosya Yukle (OCR)'}
-            </button>
-          </div>
-          <div className="subtitle">
-            Desteklenen formatlar: PDF, DOCX, TXT, MD, JSON, YAML, CSV, PNG, JPG, WEBP, BMP.
-          </div>
-
-          <div className="row input-action-row">
-            <input
-              placeholder="GitHub username"
-              value={githubUsername}
-              onChange={(e) => setGithubUsername(e.target.value)}
-              disabled={session.active || !settings.githubSyncEnabled}
-            />
-            <button
-              onClick={syncGithub}
-              disabled={session.active || !settings.githubSyncEnabled || syncingGithub}
-            >
-              {syncingGithub ? 'Senkron...' : 'GitHub Senkron'}
-            </button>
-          </div>
-          <div className="row input-action-row">
-            <button onClick={syncWebCorpus} disabled={session.active || syncingWebCorpus}>
-              {syncingWebCorpus ? 'Web Corpus Senkron...' : 'Web Corpus + Glossary Senkron'}
-            </button>
-            <button onClick={ingestGlossary} disabled={session.active || ingestingGlossary}>
-              {ingestingGlossary ? 'Glossary Import...' : 'Sadece Glossary Import'}
-            </button>
-          </div>
-          <div className="subtitle">
-            Web corpus senkronu internet kaynaklarini toplayip filtreler, sonra teknik sozlugu otomatik olusturur.
-          </div>
-
-          <div className="row input-action-row">
-            <textarea
-              className="compact-textarea"
-              placeholder="Ilan metni (job description)"
-              value={jobDescInput}
-              onChange={(e) => setJobDescInput(e.target.value)}
-              disabled={session.active}
-            />
-            <button
-              onClick={() => {
-                void importProfileText('job_desc', jobDescInput, 'Job Description')
-                setJobDescInput('')
-              }}
-              disabled={session.active || importingProfile}
-            >
-              Ekle
-            </button>
-          </div>
-
-          <div className="row input-action-row">
-            <textarea
-              className="compact-textarea"
-              placeholder="CV ozeti veya deneyim notlari"
-              value={cvInput}
-              onChange={(e) => setCvInput(e.target.value)}
-              disabled={session.active}
-            />
-            <button
-              onClick={() => {
-                void importProfileText('cv', cvInput, 'CV')
-                setCvInput('')
-              }}
-              disabled={session.active || importingProfile}
-            >
-              CV Ekle
-            </button>
-          </div>
-
-          <div className="row input-action-row">
-            <textarea
-              className="compact-textarea"
-              placeholder="LinkedIn export/ozet metni"
-              value={linkedinInput}
-              onChange={(e) => setLinkedinInput(e.target.value)}
-              disabled={session.active}
-            />
-            <button
-              onClick={() => {
-                void importProfileText('linkedin', linkedinInput, 'LinkedIn')
-                setLinkedinInput('')
-              }}
-              disabled={session.active || importingProfile}
-            >
-              LinkedIn Ekle
-            </button>
-          </div>
-
-          <div className="row input-action-row">
-            <textarea
-              className="compact-textarea"
-              placeholder="Ek kisisel not"
-              value={noteInput}
-              onChange={(e) => setNoteInput(e.target.value)}
-              disabled={session.active}
-            />
-            <button
-              onClick={() => {
-                void importProfileText('note', noteInput, 'Note')
-                setNoteInput('')
-              }}
-              disabled={session.active || importingProfile}
-            >
-              Not Ekle
-            </button>
-          </div>
-
-          <div className="row input-action-row">
-            <textarea
-              className="compact-textarea"
-              placeholder="Terminoloji / teknik notlar (NLP, sistem tasarimi, kavramlar)"
-              value={knowledgeBaseInput}
-              onChange={(e) => setKnowledgeBaseInput(e.target.value)}
-              disabled={session.active}
-            />
-            <button
-              onClick={() => {
-                void importProfileText('knowledge_base', knowledgeBaseInput, 'Knowledge Base')
-                setKnowledgeBaseInput('')
-              }}
-              disabled={session.active || importingProfile}
-            >
-              Bilgi Ekle
-            </button>
-          </div>
-
-          <div className="row input-action-row">
-            <input
-              placeholder="Context preview query (ornek: system design, kubernetes)"
-              value={previewQuery}
-              onChange={(e) => setPreviewQuery(e.target.value)}
-            />
-            <button onClick={() => void refreshContextPreview()} disabled={sessionBusy}>
-              Preview
-            </button>
-            <button onClick={reindexProfile} disabled={session.active || reindexingProfile}>
-              {reindexingProfile ? 'Reindex...' : 'Reindex'}
-            </button>
-          </div>
-
-          {interviewContextPreview && interviewContextPreview.items.length > 0 && (
-            <div className="history-list compact-list">
-              {interviewContextPreview.items.map((item) => (
-                <div key={`${item.sourceId}-${item.score}`} className="history-item">
-                  <div className="row meta-row">
-                    <span className="badge remote">{item.sourceType}</span>
-                    <span className="subtitle">{item.sourceName}</span>
-                    <span className="subtitle">score {item.score.toFixed(2)}</span>
-                  </div>
-                  <div className="history-main">{item.text}</div>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {profileSnapshot && profileSnapshot.sources.length > 0 && (
-            <div className="history-list compact-list">
-              {profileSnapshot.sources.slice(0, 20).map((source) => (
-                <div key={source.id} className="history-item">
-                  <div className="row meta-row">
-                    <span className="badge self">{source.type}</span>
-                    <span className="subtitle">{source.name}</span>
-                    <span className="sync-chip">✓ hazir</span>
-                    <button
-                      onClick={() => void removeProfileSource(source.id)}
-                      disabled={session.active}
-                      className="tiny-btn"
-                    >
-                      Sil
-                    </button>
-                  </div>
-                  <div className="history-sub">{source.contentChars} chars</div>
-                </div>
-              ))}
-            </div>
-          )}
-
-          <div className="subtitle">
-            Panel gizlendikten sonra sistem tepsisinden tekrar acabilirsiniz.
-          </div>
-        </div>
-
-        <details className="glass card advanced-card">
-          <summary>Gelismis</summary>
-
-          <div className="row form-row" style={{ marginTop: 10 }}>
-            <label className="control-label">System Audio Mode</label>
-            <select
-              value={settings.systemAudioMode}
-              onChange={(e) =>
-                patchSettings(
-                  e.target.value === 'manual'
-                    ? {
-                        systemAudioMode: 'manual',
-                        systemAudioStrategy: 'manual'
-                      }
-                    : {
-                        systemAudioMode: 'auto',
-                        systemAudioStrategy:
-                          settings.systemAudioStrategy === 'picker_each_start'
-                            ? 'picker_each_start'
-                            : 'auto_live'
-                      }
-                )
-              }
-              disabled={sessionBusy}
-            >
-              <option value="auto">Auto</option>
-              <option value="manual">Manual Override</option>
-            </select>
-            <button onClick={refreshSources} disabled={refreshingSources || sessionBusy}>
-              {refreshingSources ? 'Yenileniyor...' : 'Kaynaklari Yenile'}
-            </button>
-          </div>
-
-          {settings.systemAudioMode === 'auto' && (
-            <div className="row form-row">
-              <label className="control-label">Auto Strategy</label>
-              <select
-                value={
-                  settings.systemAudioStrategy === 'picker_each_start'
-                    ? 'picker_each_start'
-                    : 'auto_live'
-                }
-                onChange={(e) =>
-                  patchSettings({
-                    systemAudioStrategy:
-                      e.target.value === 'picker_each_start'
-                        ? 'picker_each_start'
-                        : 'auto_live'
-                  })
-                }
-                disabled={sessionBusy}
-              >
-                <option value="auto_live">Auto Live (onerilen)</option>
-                <option value="picker_each_start">Picker Every Start</option>
-              </select>
-              <button
-                onClick={redetectSystemSource}
-                disabled={!session.active || sessionBusy || redetectingSource}
-              >
-                {redetectingSource ? 'Algilaniyor...' : 'Sesi Yeniden Algila'}
-              </button>
-            </div>
-          )}
-
-          <div className="row form-row">
-            <label className="control-label">STT Runtime Mode</label>
-            <select
-              value={settings.sttRuntimeMode}
-              onChange={(e) =>
-                patchSettings({
-                  sttRuntimeMode:
-                    e.target.value === 'cuda'
-                      ? 'cuda'
-                      : e.target.value === 'cpu'
-                        ? 'cpu'
-                        : 'auto'
-                })
-              }
-              disabled={sessionBusy}
-            >
-              <option value="auto">Auto (en hizli)</option>
-              <option value="cuda">CUDA</option>
-              <option value="cpu">CPU</option>
-            </select>
-          </div>
-
-          <div className="row form-row">
-            <label className="control-label">STT Dil Modu</label>
-            <select
-              value={settings.sttLanguageMode}
-              onChange={(e) =>
-                patchSettings({
-                  sttLanguageMode:
-                    e.target.value === 'manual'
-                      ? 'manual'
-                      : e.target.value === 'session_lock'
-                        ? 'session_lock'
-                        : 'segment_auto'
-                })
-              }
-              disabled={sessionBusy}
-            >
-              <option value="segment_auto">Parca Bazli Auto</option>
-              <option value="session_lock">Oturum Boyu Kilit</option>
-              <option value="manual">Manuel</option>
-            </select>
-          </div>
-
-          {settings.sttLanguageMode === 'manual' && (
-            <div className="row form-row">
-              <label className="control-label">Manuel Dil</label>
-              <select
-                value={settings.manualSttLanguage}
-                onChange={(e) =>
-                  patchSettings({
-                    manualSttLanguage: e.target.value === 'en' ? 'en' : 'tr'
-                  })
-                }
-                disabled={sessionBusy}
-              >
-                <option value="tr">Turkce</option>
-                <option value="en">English</option>
-              </select>
-            </div>
-          )}
-
-          {settings.systemAudioMode === 'manual' && (
-            <div className="row form-row">
-              <label className="control-label">Manual Source</label>
-              <select
-                value={selectedSystemSourceId || settings.manualSystemSourceId}
-                onChange={(e) => {
-                  setSelectedSystemSourceId(e.target.value)
-                  patchSettings({ manualSystemSourceId: e.target.value })
-                }}
-                disabled={sessionBusy}
-              >
-                {audioSources.length === 0 && <option value="">Kaynak bulunamadi</option>}
-                {audioSources.map((source) => (
-                  <option key={source.id} value={source.id}>
-                    {source.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
-
-          <div className="row inline-checks">
-            <label className="check-label">
-              <input
-                type="checkbox"
-                checked={settings.captureMicrophone}
-                onChange={(e) => patchSettings({ captureMicrophone: e.target.checked })}
-              />{' '}
-              Mikrofonu da yakala
-            </label>
-          </div>
-
-          <div className="row inline-checks">
-            <label className="check-label">
-              <input
-                type="checkbox"
-                checked={settings.autoHideControlWindow}
-                onChange={(e) => patchSettings({ autoHideControlWindow: e.target.checked })}
-              />{' '}
-              Baslatinca paneli gizle
-            </label>
-          </div>
-
-          <div className="row inline-checks">
-            <label className="check-label">
-              <input
-                type="checkbox"
-                checked={settings.overlayClickThrough}
-                onChange={(e) => setOverlayClickThrough(e.target.checked)}
-              />{' '}
-              Overlay click-through
-            </label>
-          </div>
-
-          <div className="row form-row">
-            <label className="control-label">Overlay Opacity</label>
-            <input
-              type="range"
-              min="0.25"
-              max="1"
-              step="0.01"
-              value={settings.overlayOpacity}
-              onChange={(e) => setOverlayOpacity(Number(e.target.value))}
-            />
-            <span className="subtitle">{Math.round(settings.overlayOpacity * 100)}%</span>
-          </div>
-
-          <div className="row form-row">
-            <label className="control-label">Ollama URL</label>
-            <input
-              value={settings.ollamaBaseUrl}
-              onChange={(e) => patchSettings({ ollamaBaseUrl: e.target.value })}
-            />
-          </div>
-        </details>
-      </div>
-
-      <div className="glass card history-card">
-        <div className="row meta-row">
-          <h3>Canli Gecmis</h3>
-          <div className="subtitle">
-            Transcript: {transcriptFeed.length} | Assist: {assistFeed.length}
-          </div>
-        </div>
-
-        <div className="history-grid">
-          <div className="history-column">
-            <div className="subtitle">Transcript Akisi</div>
-            <div className="history-list">
-              {transcriptFeed.length === 0 && <div className="subtitle">Henuz transcript yok.</div>}
-              {transcriptFeed.map((item) => {
-                const assist = assistByTranscript.get(item.id)
+            <div className="timeline-list">
+              {timeline.length === 0 && <div className="empty-state">Transcript and answer flow will appear here.</div>}
+              {timeline.map((item) => {
+                const assist = assistUpdates.find((entry) => entry.transcriptId === item.id && entry.state !== 'error')
                 return (
-                  <div className="history-item" key={item.id}>
-                    <div className="row meta-row">
-                      <span className={`badge ${item.speaker}`}>{item.speaker}</span>
-                      <span className="subtitle">{(item.language || 'unknown').toUpperCase()}</span>
-                      <span className="subtitle">{new Date(item.emittedMs).toLocaleTimeString()}</span>
-                    </div>
-                    <div className="history-main">{item.text || item.textEn}</div>
-                    {assist?.translationTr && <div className="history-sub">{assist.translationTr}</div>}
+                  <div className="timeline-row" key={item.id}>
+                    <div className="timeline-meta"><span className={`speaker-badge speaker-${item.speaker}`}>{item.speaker}</span><span>{(item.language || 'unknown').toUpperCase()}</span><span>{new Date(item.emittedMs).toLocaleTimeString()}</span></div>
+                    <div className="timeline-question">{item.text}</div>
+                    {assist && <div className="timeline-answer">{mainAnswer(assist)}</div>}
+                    {assist?.helperAnswerTr && <div className="timeline-helper">{assist.helperAnswerTr}</div>}
                   </div>
                 )
               })}
             </div>
-          </div>
+          </article>
+        </div>
+        <div className="column-stack side-column">
+          <article className="control-card runtime-card">
+            <div className="section-head"><div><div className="section-kicker">Runtime</div><h2>Models and Providers</h2></div><button className="primary-btn" disabled={savingSettings} onClick={() => void saveSettings()}>{savingSettings ? 'Saving...' : 'Save Settings'}</button></div>
+            <label className="field"><span>Inference Profile</span><select value={settings.inferenceProfileId} onChange={(e) => {
+              const next = PROFILE_PRESETS.find((item) => item.id === e.target.value) || PROFILE_PRESETS[0]
+              patchSettings({
+                inferenceProfileId: next.id,
+                providerConfig: {
+                  inference: { ...settings.providerConfig.inference, model: next.model },
+                  translation: { ...settings.providerConfig.translation }
+                }
+              })
+            }}>{PROFILE_PRESETS.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}</select></label>
+            <div className="field-grid two-up">
+              <label className="field"><span>Inference Provider</span><select value={settings.providerConfig.inference.kind} onChange={(e) => patchSettings({ providerConfig: { inference: { ...settings.providerConfig.inference, kind: e.target.value as ProviderKind }, translation: { ...settings.providerConfig.translation } } })}><option value="ollama">ollama</option><option value="openai_compatible">openai compatible</option></select></label>
+              <label className="field"><span>Inference Model</span><input value={settings.providerConfig.inference.model} onChange={(e) => patchSettings({ providerConfig: { inference: { ...settings.providerConfig.inference, model: e.target.value }, translation: { ...settings.providerConfig.translation } } })} /></label>
+            </div>
+            <label className="field"><span>Inference Base URL</span><input value={settings.providerConfig.inference.baseUrl} onChange={(e) => patchSettings({ providerConfig: { inference: { ...settings.providerConfig.inference, baseUrl: e.target.value }, translation: { ...settings.providerConfig.translation } } })} /></label>
+            <label className="field"><span>Inference API Key</span><input type="password" value={settings.providerConfig.inference.apiKey || ''} onChange={(e) => patchSettings({ providerConfig: { inference: { ...settings.providerConfig.inference, apiKey: e.target.value }, translation: { ...settings.providerConfig.translation } } })} placeholder="optional" /></label>
+            <label className="field inline-field"><span>Enable TR Helper</span><input type="checkbox" checked={settings.helperTranslationEnabled} onChange={(e) => patchSettings({ helperTranslationEnabled: e.target.checked, providerConfig: { inference: { ...settings.providerConfig.inference }, translation: { ...settings.providerConfig.translation, enabled: e.target.checked } } })} /></label>
+            <div className="field-grid two-up">
+              <label className="field"><span>Translation Provider</span><select disabled={!settings.helperTranslationEnabled} value={settings.providerConfig.translation.kind} onChange={(e) => patchSettings({ providerConfig: { inference: { ...settings.providerConfig.inference }, translation: { ...settings.providerConfig.translation, kind: e.target.value as ProviderKind } } })}><option value="ollama">ollama</option><option value="openai_compatible">openai compatible</option></select></label>
+              <label className="field"><span>Translation Model</span><input disabled={!settings.helperTranslationEnabled} value={settings.providerConfig.translation.model} onChange={(e) => patchSettings({ providerConfig: { inference: { ...settings.providerConfig.inference }, translation: { ...settings.providerConfig.translation, model: e.target.value } } })} /></label>
+            </div>
+            <label className="field"><span>Translation Base URL</span><input disabled={!settings.helperTranslationEnabled} value={settings.providerConfig.translation.baseUrl} onChange={(e) => patchSettings({ providerConfig: { inference: { ...settings.providerConfig.inference }, translation: { ...settings.providerConfig.translation, baseUrl: e.target.value } } })} /></label>
+            <label className="field"><span>Translation API Key</span><input type="password" disabled={!settings.helperTranslationEnabled} value={settings.providerConfig.translation.apiKey || ''} onChange={(e) => patchSettings({ providerConfig: { inference: { ...settings.providerConfig.inference }, translation: { ...settings.providerConfig.translation, apiKey: e.target.value } } })} placeholder="optional" /></label>
+            <label className="field"><span>STT Model</span><select value={settings.sttModel} onChange={(e) => patchSettings({ sttModel: e.target.value })}>{STT_MODELS.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
+            <div className="field-grid two-up">
+              <label className="field"><span>Runtime Mode</span><select value={settings.sttRuntimeMode} onChange={(e) => patchSettings({ sttRuntimeMode: e.target.value === 'cpu' ? 'cpu' : e.target.value === 'cuda' ? 'cuda' : 'auto' })}><option value="cuda">cuda</option><option value="auto">auto</option><option value="cpu">cpu</option></select></label>
+              <label className="field"><span>Audio Strategy</span><select value={settings.systemAudioStrategy} onChange={(e) => patchSettings({ systemAudioStrategy: e.target.value === 'manual' ? 'manual' : e.target.value === 'picker_each_start' ? 'picker_each_start' : 'auto_live' })}><option value="auto_live">auto live</option><option value="picker_each_start">picker each start</option><option value="manual">manual</option></select></label>
+            </div>
+            <div className="field-grid two-up">
+              <label className="field inline-field"><span>Capture Mic</span><input type="checkbox" checked={settings.captureMicrophone} onChange={(e) => patchSettings({ captureMicrophone: e.target.checked })} /></label>
+              <label className="field inline-field"><span>Auto-hide Control</span><input type="checkbox" checked={settings.autoHideControlWindow} onChange={(e) => patchSettings({ autoHideControlWindow: e.target.checked })} /></label>
+            </div>
+            <div className="chip-row"><button className="ghost-btn" disabled={refreshingSources} onClick={() => void refreshSources()}>{refreshingSources ? 'Refreshing...' : 'Refresh Sources'}</button><button className="ghost-btn" onClick={() => void window.api.redetectAudioSource()}>Redetect</button></div>
+            {settings.systemAudioStrategy === 'manual' && <label className="field"><span>Manual Source</span><select value={selectedSystemSourceId || settings.manualSystemSourceId} onChange={(e) => { setSelectedSystemSourceId(e.target.value); patchSettings({ manualSystemSourceId: e.target.value, systemAudioMode: 'manual' }) }}><option value="">Select source</option>{audioSources.map((source) => <option key={source.id} value={source.id}>{source.name}</option>)}</select></label>}
+          </article>
 
-          <div className="history-column">
-            <div className="subtitle">Assist Akisi</div>
+          <article className="control-card persona-card">
+            <div className="section-head"><div><div className="section-kicker">Persona</div><h2>Candidate Memory</h2></div><button className="ghost-btn" onClick={() => void refreshProfileState()}>Refresh</button></div>
+            <label className="field"><span>GitHub Username</span><div className="inline-row"><input value={githubUsername} onChange={(e) => setGithubUsername(e.target.value)} placeholder="username" /><button className="ghost-btn" disabled={syncingGithub} onClick={() => void syncGithub()}>{syncingGithub ? 'Syncing...' : 'Sync'}</button></div></label>
+            <label className="field"><span>CV Highlights</span><textarea value={cvInput} onChange={(e) => setCvInput(e.target.value)} /><button className="ghost-btn" onClick={() => void importText('cv', cvInput, () => setCvInput(''))}>Import CV</button></label>
+            <label className="field"><span>Job Description</span><textarea value={jobDescInput} onChange={(e) => setJobDescInput(e.target.value)} /><button className="ghost-btn" onClick={() => void importText('job_desc', jobDescInput, () => setJobDescInput(''))}>Import JD</button></label>
+            <label className="field"><span>Interview Notes</span><textarea value={noteInput} onChange={(e) => setNoteInput(e.target.value)} /><button className="ghost-btn" onClick={() => void importText('note', noteInput, () => setNoteInput(''))}>Import Notes</button></label>
+            <div className="field-grid two-up compact-top"><label className="field"><span>File Type</span><select value={fileImportType} onChange={(e) => setFileImportType(e.target.value as ProfileSourceType)}>{Object.entries(SOURCE_LABEL).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label><div className="field action-field"><span>File Import</span><button className="ghost-btn" disabled={importingFile} onClick={() => void importFile()}>{importingFile ? 'Importing...' : 'Import File'}</button></div></div>
+            <label className="field"><span>Context Preview Query</span><div className="inline-row"><input value={previewQuery} onChange={(e) => setPreviewQuery(e.target.value)} placeholder="kafka, failover, microservices..." /><button className="ghost-btn" onClick={() => void refreshProfileState()}>Preview</button></div></label>
+            <div className="preview-list">{interviewContextPreview?.items.slice(0, 5).map((item) => <div className="preview-item" key={`${item.sourceId}-${item.score}`}><div className="preview-meta"><span>{SOURCE_LABEL[item.sourceType]}</span><span>{item.score.toFixed(2)}</span></div><div>{item.text}</div></div>)}</div>
+            <div className="source-list">{profileSnapshot?.sources.slice(0, 8).map((source) => <div className="source-row" key={source.id}><div><strong>{source.name}</strong><div className="muted-line">{SOURCE_LABEL[source.type]} | {source.contentChars} chars</div></div><button className="ghost-btn tiny-btn" onClick={() => void window.api.clearProfileSource({ sourceId: source.id }).then(() => refreshProfileState())}>Remove</button></div>)}</div>
+          </article>
+
+          <article className="control-card practice-card">
+            <div className="section-head"><div><div className="section-kicker">Practice</div><h2>Dry Run Answer</h2></div><div className="chip-row"><button className="ghost-btn" onClick={() => void exportHistory('json')}>Export JSON</button><button className="ghost-btn" onClick={() => void exportHistory('markdown')}>Export MD</button></div></div>
+            <label className="field"><span>Mock Question</span><textarea value={practicePrompt} onChange={(e) => setPracticePrompt(e.target.value)} placeholder="Tell me about a time you stabilized a failing system..." /></label>
+            <button className="primary-btn" onClick={() => void runPractice()}>Generate Practice Answer</button>
+            <div className="section-head compact-top"><div><div className="section-kicker">Review Queue</div><h2>Saved Sessions</h2></div><button className="ghost-btn" disabled={refreshingHistory} onClick={() => void refreshHistory()}>{refreshingHistory ? 'Refreshing...' : 'Refresh'}</button></div>
             <div className="history-list">
-              {assistFeed.length === 0 && <div className="subtitle">Henuz assist yok.</div>}
-              {assistFeed.map((item) => (
-                <div className="history-item" key={item.id}>
-                  <div className="row meta-row">
-                    <span className="badge remote">assistant</span>
-                    <span className="subtitle">{Math.round(item.latencyMs)} ms</span>
+              {historySessions.slice(0, 8).map((item) => (
+                <div className="history-row" key={item.id}>
+                  <div>
+                    <strong>{new Date(item.startedAtMs).toLocaleString()}</strong>
+                    <div className="muted-line">transcripts {item.transcriptCount} | assists {item.assistCount} | reviewed {item.reviewedCount}</div>
+                    <div className="muted-line">chosen {item.chosenCount} | rejected {item.rejectedCount}</div>
                   </div>
-                  <div className="history-main">{assistPrimaryText(item)}</div>
-                  <div className="history-sub">{assistSecondaryText(item)}</div>
+                  <div className="chip-row">
+                    <button className="ghost-btn tiny-btn" onClick={() => void loadHistoryDetail(item.id)}>{selectedHistorySessionId === item.id ? 'Opened' : 'Open'}</button>
+                    <button className="ghost-btn tiny-btn" onClick={() => void exportHistory('json', item.id)}>JSON</button>
+                    <button className="ghost-btn tiny-btn" onClick={() => void exportHistory('markdown', item.id)}>MD</button>
+                  </div>
                 </div>
               ))}
+              {historySessions.length === 0 && <div className="empty-state">No saved sessions yet.</div>}
             </div>
-          </div>
+            <div className="section-head compact-top">
+              <div>
+                <div className="section-kicker">Session Detail</div>
+                <h2>{selectedHistorySummary ? new Date(selectedHistorySummary.startedAtMs).toLocaleString() : 'Choose a session'}</h2>
+              </div>
+              {selectedHistorySessionId && <div className="chip-row"><button className="ghost-btn tiny-btn" onClick={() => void exportHistory('json', selectedHistorySessionId)}>Export JSON</button><button className="ghost-btn tiny-btn" onClick={() => void exportHistory('markdown', selectedHistorySessionId)}>Export MD</button></div>}
+            </div>
+            {loadingHistoryDetail && <div className="empty-state">Loading session detail...</div>}
+            {!loadingHistoryDetail && !selectedHistoryRecord && <div className="empty-state">Open a saved session to label chosen and rejected answers.</div>}
+            {!loadingHistoryDetail && selectedHistoryRecord && (
+              <div className="timeline-list">
+                <div className="chip-row">
+                  <span className="soft-chip">schema {selectedHistoryRecord.schemaVersion || 'session.v1'}</span>
+                  <span className="soft-chip">assists {selectedHistoryRecord.assists.length}</span>
+                  <span className="soft-chip">transcripts {selectedHistoryRecord.transcripts.length}</span>
+                </div>
+                {reviewedAssists.map((assist) => {
+                  const label = reviewLabelOf(assist)
+                  const availableTags = reviewTagsFor(label)
+                  return (
+                    <div className="timeline-row" key={assist.id}>
+                      <div className="timeline-meta"><span className="soft-chip">{label}</span><span>{assist.state}</span><span>{assist.firstTokenMs ? `ttft ${Math.round(assist.firstTokenMs)} ms` : 'ttft n/a'}</span></div>
+                      <div className="timeline-question">{assist.sourceText || 'Question unavailable.'}</div>
+                      <div className="timeline-answer">{assist.answerEn || assist.rawText || '-'}</div>
+                      {assist.contextLinesUsed && assist.contextLinesUsed.length > 0 && <div className="timeline-helper">{assist.contextLinesUsed.join(' | ')}</div>}
+                      <div className="chip-row">
+                        <button className="ghost-btn tiny-btn" disabled={savingReviewAssistId === assist.id} onClick={() => void updateAssistReview(assist.id, 'chosen', assist.reviewTags || [])}>Chosen</button>
+                        <button className="ghost-btn tiny-btn" disabled={savingReviewAssistId === assist.id} onClick={() => void updateAssistReview(assist.id, 'rejected', assist.reviewTags || [])}>Rejected</button>
+                        <button className="ghost-btn tiny-btn" disabled={savingReviewAssistId === assist.id} onClick={() => void updateAssistReview(assist.id, 'skipped', [])}>Skip</button>
+                      </div>
+                      {availableTags.length > 0 && <div className="chip-row">{availableTags.map((tag) => <button key={`${assist.id}-${tag}`} className={(assist.reviewTags || []).includes(tag) ? 'primary-btn tiny-btn' : 'ghost-btn tiny-btn'} disabled={savingReviewAssistId === assist.id} onClick={() => void toggleReviewTag(assist, tag)}>{tag}</button>)}</div>}
+                    </div>
+                  )
+                })}
+                {reviewedAssists.length === 0 && <div className="empty-state">No finalized assists in this session yet.</div>}
+              </div>
+            )}
+          </article>
         </div>
-      </div>
+      </section>
     </div>
   )
 }
-
 

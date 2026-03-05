@@ -8,13 +8,16 @@ import {
   GlossaryIngestRequest,
   GlossaryIngestResult,
   GithubSyncRequest,
+  HistorySessionDetailResult,
   InterviewContextPreview,
   AudioChunkInput,
   HistoryExportRequest,
   HistoryExportResult,
+  HistoryUpdateAssistReviewRequest,
+  HistoryUpdateAssistReviewResult,
   LatencyMetricsEvent,
-  ManualAssistRequest,
-  ManualAssistResult,
+  PracticeAssistRequest,
+  PracticeAssistResult,
   OverlaySettings,
   OverlayStateEvent,
   ProfileClearSourceRequest,
@@ -43,11 +46,18 @@ import { AssistService } from '../services/assistService'
 import { ConnectorService } from '../services/connectorService'
 import { HistoryManager } from '../services/historyManager'
 import { InterviewAssistOrchestrator } from '../services/interviewAssistOrchestrator'
+import { OllamaInferenceProvider } from '../services/ollamaInferenceProvider'
+import { OpenAICompatibleInferenceProvider } from '../services/openAICompatibleInferenceProvider'
 import { ProfileFileImportService } from '../services/profileFileImportService'
 import { ProfileKnowledgeSyncService } from '../services/profileKnowledgeSyncService'
 import { ProfileMemoryService } from '../services/profileMemoryService'
+import { MultiplexInferenceProvider, MultiplexTranslationProvider } from '../services/providerMultiplexer'
 import { SettingsManager } from '../services/settingsManager'
 import { SttBridge } from '../services/sttBridge'
+import {
+  OllamaTranslationProvider,
+  OpenAICompatibleTranslationProvider
+} from '../services/translationProvider'
 import { buildLatencySummary } from '../utils/latencyStats'
 import {
   appendRemoteSegment,
@@ -106,7 +116,8 @@ let transcriptHistory: TranscriptEvent[] = []
 let activeSessionId: string | null = null
 let activeSessionStartedAtMs = 0
 let activeSessionSttModel = ''
-let activeSessionAnswerModel = ''
+let activeSessionInferenceProfileId: SessionHistoryRecord['inferenceProfileId'] = 'llama3_1_8b_primary'
+let activeSessionInferenceModel = ''
 let activeSessionTranscripts: TranscriptEvent[] = []
 let activeSessionAssists: AssistEvent[] = []
 let lastSessionSnapshot: SessionHistoryRecord | null = null
@@ -572,7 +583,7 @@ function schedulePendingRemoteSegmentFlush(segment: RemoteAssistSegment): void {
 
 function queueRemoteAssistFromTranscript(event: TranscriptEvent): void {
   if (event.speaker !== 'remote') return
-  const text = (event.text || event.textEn || '').trim()
+  const text = (event.text || '').trim()
   if (!text) return
 
   const now = Date.now()
@@ -581,8 +592,7 @@ function queueRemoteAssistFromTranscript(event: TranscriptEvent): void {
     pendingRemoteSegment = createRemoteSegment(
       {
         ...event,
-        text,
-        textEn: text
+        text
       },
       now
     )
@@ -595,8 +605,7 @@ function queueRemoteAssistFromTranscript(event: TranscriptEvent): void {
     pendingRemoteSegment = createRemoteSegment(
       {
         ...event,
-        text,
-        textEn: text
+        text
       },
       now
     )
@@ -609,8 +618,7 @@ function queueRemoteAssistFromTranscript(event: TranscriptEvent): void {
     pendingRemoteSegment,
     {
       ...event,
-      text,
-      textEn: text
+      text
     },
     now
   )
@@ -621,7 +629,8 @@ function resetActiveSessionBuffers(): void {
   activeSessionId = null
   activeSessionStartedAtMs = 0
   activeSessionSttModel = ''
-  activeSessionAnswerModel = ''
+  activeSessionInferenceProfileId = 'llama3_1_8b_primary'
+  activeSessionInferenceModel = ''
   activeSessionTranscripts = []
   activeSessionAssists = []
 }
@@ -640,11 +649,13 @@ function buildActiveSessionSnapshot(endedAtMs: number): SessionHistoryRecord | n
   }
 
   return {
+    schemaVersion: 'session.v2',
     id: activeSessionId,
     startedAtMs: activeSessionStartedAtMs,
     endedAtMs,
     sttModel: activeSessionSttModel,
-    answerModel: activeSessionAnswerModel,
+    inferenceProfileId: activeSessionInferenceProfileId,
+    inferenceModel: activeSessionInferenceModel,
     transcripts: activeSessionTranscripts.map((item) => ({ ...item })),
     assists: activeSessionAssists.map((item) => ({ ...item }))
   }
@@ -682,6 +693,89 @@ function trackAssistForSession(event: AssistEvent): void {
     ...activeSessionAssists[idx],
     ...event
   }
+}
+
+function summarizeReviewedAssists(record: SessionHistoryRecord): {
+  reviewedCount: number
+  chosenCount: number
+  rejectedCount: number
+} {
+  const assists = record.assists || []
+  return {
+    reviewedCount: assists.filter(
+      (item) => item.reviewLabel && item.reviewLabel !== 'unreviewed' && item.reviewLabel !== 'skipped'
+    ).length,
+    chosenCount: assists.filter((item) => item.reviewLabel === 'chosen').length,
+    rejectedCount: assists.filter((item) => item.reviewLabel === 'rejected').length
+  }
+}
+
+function applyAssistReviewToRecord(
+  record: SessionHistoryRecord,
+  payload: HistoryUpdateAssistReviewRequest
+): SessionHistoryRecord | null {
+  const assistIndex = record.assists.findIndex((item) => item.id === payload.assistId)
+  if (assistIndex === -1) {
+    return null
+  }
+
+  const reviewTags = Array.from(
+    new Set((payload.reviewTags || []).map((item) => String(item || '').trim()).filter(Boolean))
+  )
+  const nextAssist: AssistEvent = {
+    ...record.assists[assistIndex],
+    reviewLabel: payload.reviewLabel,
+    reviewTags,
+    reviewComment: String(payload.reviewComment || '').trim() || undefined,
+    reviewedAtMs: Date.now(),
+    reviewSource: payload.reviewSource || 'ui'
+  }
+
+  const nextAssists = [...record.assists]
+  nextAssists[assistIndex] = nextAssist
+  return {
+    ...record,
+    schemaVersion: 'session.v2',
+    assists: nextAssists
+  }
+}
+
+function resolveSessionForDetail(sessionId: string): SessionHistoryRecord | null {
+  if (activeSessionId === sessionId) {
+    return buildActiveSessionSnapshot(Date.now())
+  }
+
+  if (lastSessionSnapshot?.id === sessionId) {
+    return cloneSessionRecord(lastSessionSnapshot)
+  }
+
+  return historyManager?.getSessionById(sessionId) || null
+}
+
+function applyReviewToSessionBuffers(payload: HistoryUpdateAssistReviewRequest): SessionHistoryRecord | null {
+  if (activeSessionId === payload.sessionId) {
+    const activeSnapshot = buildActiveSessionSnapshot(Date.now())
+    if (!activeSnapshot) {
+      return null
+    }
+    const updated = applyAssistReviewToRecord(activeSnapshot, payload)
+    if (!updated) {
+      return null
+    }
+    activeSessionAssists = updated.assists.map((item) => ({ ...item }))
+    return updated
+  }
+
+  if (lastSessionSnapshot?.id === payload.sessionId) {
+    const updated = applyAssistReviewToRecord(cloneSessionRecord(lastSessionSnapshot), payload)
+    if (!updated) {
+      return null
+    }
+    lastSessionSnapshot = updated
+    return cloneSessionRecord(updated)
+  }
+
+  return null
 }
 
 function resolveSessionForExport(sessionId?: string): SessionHistoryRecord | null {
@@ -842,19 +936,16 @@ async function handleRemoteSegment(segment: RemoteAssistSegment): Promise<void> 
 
   try {
     const finalAssist = await interviewAssistOrchestrator.generate({
-      model: settings.answerModel,
-      baseUrl: settings.ollamaBaseUrl,
+      providerConfig: settings.providerConfig,
       transcriptId: segment.id,
       segmentId: segment.id,
       sourceText: segment.text,
       sourceLanguage: segment.language,
-      outputPolicy: settings.assistOutputPolicy,
       contextLines: buildNormalizedContext(transcriptHistory),
-      assistantMode: settings.assistantMode,
+      productMode: settings.productMode,
       personalizationEnabled: settings.personalizationEnabled,
       assistPersonalizationPolicy: settings.assistPersonalizationPolicy,
       assistCompositionPolicy: settings.assistCompositionPolicy,
-      assistLanguagePolicy: settings.assistLanguagePolicy,
       answerStyle: settings.interviewAnswerStyle,
       signal: controller.signal,
       timeoutMs: ASSIST_TIMEOUT_MS,
@@ -1058,7 +1149,16 @@ function setupBridgeListeners(): void {
 export function initializeIpcHandlers(windowRefs: WindowRefs): void {
   refs = windowRefs
   settingsManager = new SettingsManager()
-  assistService = new AssistService()
+  assistService = new AssistService(
+    new MultiplexInferenceProvider({
+      ollama: new OllamaInferenceProvider(),
+      openai_compatible: new OpenAICompatibleInferenceProvider()
+    }),
+    new MultiplexTranslationProvider({
+      ollama: new OllamaTranslationProvider(),
+      openai_compatible: new OpenAICompatibleTranslationProvider()
+    })
+  )
   profileMemoryService = new ProfileMemoryService()
   connectorService = new ConnectorService(profileMemoryService)
   interviewAssistOrchestrator = new InterviewAssistOrchestrator(assistService, profileMemoryService)
@@ -1468,6 +1568,63 @@ export function initializeIpcHandlers(windowRefs: WindowRefs): void {
     )
   })
 
+  ipcMain.handle('history:detail', (_event, sessionId: string) => {
+    const record = resolveSessionForDetail(String(sessionId || '').trim())
+    const result: HistorySessionDetailResult = {
+      success: !!record,
+      record
+    }
+    return result
+  })
+
+  ipcMain.handle('history:update-review', (_event, payload: HistoryUpdateAssistReviewRequest) => {
+    if (!historyManager) {
+      throw new Error('History manager unavailable.')
+    }
+
+    const sessionId = String(payload.sessionId || '').trim()
+    const assistId = String(payload.assistId || '').trim()
+    if (!sessionId || !assistId) {
+      throw new Error('Session ID and assist ID are required.')
+    }
+
+    let record = applyReviewToSessionBuffers({
+      ...payload,
+      sessionId,
+      assistId
+    })
+
+    const persisted = historyManager.updateAssistReview(sessionId, assistId, {
+      reviewLabel: payload.reviewLabel,
+      reviewTags: payload.reviewTags,
+      reviewComment: payload.reviewComment,
+      reviewSource: payload.reviewSource
+    })
+
+    if (persisted?.record) {
+      record = persisted.record
+      if (lastSessionSnapshot?.id === sessionId) {
+        lastSessionSnapshot = cloneSessionRecord(record)
+      }
+    }
+
+    if (!record) {
+      throw new Error('Session review target not found.')
+    }
+
+    const counts = summarizeReviewedAssists(record)
+    const result: HistoryUpdateAssistReviewResult = {
+      success: true,
+      sessionId,
+      assistId,
+      reviewLabel: payload.reviewLabel,
+      reviewedCount: counts.reviewedCount,
+      chosenCount: counts.chosenCount,
+      rejectedCount: counts.rejectedCount
+    }
+    return result
+  })
+
   ipcMain.handle('history:export', (_event, payload: HistoryExportRequest) => {
     if (!historyManager) {
       throw new Error('History manager unavailable.')
@@ -1494,7 +1651,7 @@ export function initializeIpcHandlers(windowRefs: WindowRefs): void {
       return { success: true }
     }
 
-    if (payload.mode !== 'meeting') {
+    if (payload.mode !== 'interview_live' && payload.mode !== 'interview_practice') {
       throw new Error('Unsupported mode requested.')
     }
 
@@ -1503,8 +1660,6 @@ export function initializeIpcHandlers(windowRefs: WindowRefs): void {
       throw new Error('Session dependencies unavailable.')
     }
     const requestedRuntimeMode: SttRuntimeMode = payload.sttRuntimeMode || settings.sttRuntimeMode || 'auto'
-    const requestedLanguageMode = payload.sttLanguageMode || settings.sttLanguageMode || 'segment_auto'
-    const requestedManualLanguage = payload.manualSttLanguage || settings.manualSttLanguage || 'tr'
 
     transcriptHistory = []
     lastRemoteTranscript = null
@@ -1519,7 +1674,8 @@ export function initializeIpcHandlers(windowRefs: WindowRefs): void {
     activeSessionId = randomUUID()
     activeSessionStartedAtMs = Date.now()
     activeSessionSttModel = payload.sttModel || settings.sttModel
-    activeSessionAnswerModel = settings.answerModel
+    activeSessionInferenceProfileId = settings.inferenceProfileId
+    activeSessionInferenceModel = settings.providerConfig.inference.model
 
     sessionActive = true
     suggestionsMuted = false
@@ -1535,8 +1691,6 @@ export function initializeIpcHandlers(windowRefs: WindowRefs): void {
       await sttBridge.start(payload.sttModel || settings.sttModel, {
         vad: payload.vad || settings.vad,
         runtimeMode: requestedRuntimeMode,
-        sttLanguageMode: requestedLanguageMode,
-        manualSttLanguage: requestedManualLanguage,
         cudaRetryCount: STT_CUDA_RETRY_COUNT,
         eagerWarmup: true,
         timeoutMs: START_SESSION_TIMEOUT_MS
@@ -1550,8 +1704,7 @@ export function initializeIpcHandlers(windowRefs: WindowRefs): void {
       if (assistService) {
         try {
           await assistService.prewarm({
-            model: settings.answerModel,
-            baseUrl: settings.ollamaBaseUrl,
+            providerConfig: settings.providerConfig,
             timeoutMs: ASSIST_PREWARM_TIMEOUT_MS
           })
         } catch (prewarmError) {
@@ -1659,7 +1812,7 @@ export function initializeIpcHandlers(windowRefs: WindowRefs): void {
     return { success: true }
   })
 
-  ipcMain.handle('assist:manual-generate', async (_event, payload: ManualAssistRequest) => {
+  ipcMain.handle('assist:practice-generate', async (_event, payload: PracticeAssistRequest) => {
     if (sessionActive) {
       throw new Error('Canli oturum acikken manuel test kapali. Oturumu durdurup tekrar deneyin.')
     }
@@ -1682,7 +1835,6 @@ export function initializeIpcHandlers(windowRefs: WindowRefs): void {
       id: randomUUID(),
       speaker,
       text,
-      textEn: text,
       language,
       languageConfidence: 1,
       isFinal: true,
@@ -1694,7 +1846,7 @@ export function initializeIpcHandlers(windowRefs: WindowRefs): void {
 
     commitTranscriptEvent(transcript)
     if (speaker !== 'remote') {
-      const noAssistResult: ManualAssistResult = {
+      const noAssistResult: PracticeAssistResult = {
         success: true,
         transcriptId: transcript.id
       }
@@ -1706,8 +1858,7 @@ export function initializeIpcHandlers(windowRefs: WindowRefs): void {
       if (assistService) {
         try {
           await assistService.prewarm({
-            model: settings.answerModel,
-            baseUrl: settings.ollamaBaseUrl,
+            providerConfig: settings.providerConfig,
             timeoutMs: MANUAL_ASSIST_PREWARM_TIMEOUT_MS
           })
         } catch {
@@ -1716,19 +1867,16 @@ export function initializeIpcHandlers(windowRefs: WindowRefs): void {
       }
 
       const finalAssist = await interviewAssistOrchestrator.generate({
-        model: settings.answerModel,
-        baseUrl: settings.ollamaBaseUrl,
+        providerConfig: settings.providerConfig,
         transcriptId: transcript.id,
         segmentId: transcript.id,
         sourceText: text,
         sourceLanguage: language,
-        outputPolicy: settings.assistOutputPolicy,
         contextLines: buildNormalizedContext(transcriptHistory),
-        assistantMode: settings.assistantMode,
+        productMode: settings.productMode,
         personalizationEnabled: settings.personalizationEnabled,
         assistPersonalizationPolicy: settings.assistPersonalizationPolicy,
         assistCompositionPolicy: settings.assistCompositionPolicy,
-        assistLanguagePolicy: settings.assistLanguagePolicy,
         answerStyle: settings.interviewAnswerStyle,
         timeoutMs: MANUAL_ASSIST_TIMEOUT_MS,
         onPartial: (partial: AssistEvent) => {
@@ -1751,7 +1899,7 @@ export function initializeIpcHandlers(windowRefs: WindowRefs): void {
 
       trackAssistForSession(finalAssist)
       broadcast('assist:update', finalAssist)
-      const result: ManualAssistResult = {
+      const result: PracticeAssistResult = {
         success: true,
         transcriptId: transcript.id,
         assistId: finalAssist.id
@@ -1900,12 +2048,14 @@ export function cleanupIpcHandlers(): void {
   ipcMain.removeHandler('profile:clear-source')
   ipcMain.removeHandler('audio:sources')
   ipcMain.removeHandler('history:list')
+  ipcMain.removeHandler('history:detail')
+  ipcMain.removeHandler('history:update-review')
   ipcMain.removeHandler('history:export')
   ipcMain.removeHandler('session:start')
   ipcMain.removeHandler('session:stop')
   ipcMain.removeHandler('session:update-vad')
   ipcMain.removeHandler('transcript:inject')
-  ipcMain.removeHandler('assist:manual-generate')
+  ipcMain.removeHandler('assist:practice-generate')
   ipcMain.removeHandler('overlay:set')
   ipcMain.removeHandler('control:hide')
   ipcMain.removeHandler('control:show')
@@ -1913,3 +2063,6 @@ export function cleanupIpcHandlers(): void {
   ipcMain.removeHandler('assistant:toggle-mute')
   ipcMain.removeHandler('session:redetect-audio-source')
 }
+
+
+

@@ -1,160 +1,316 @@
-{
-  "categories": [
-    {
-      "name": "system_design",
-      "queries": [
-        "system design interview questions scalability tradeoffs",
-        "design url shortener interview discussion",
-        "design news feed interview architecture"
-      ],
-      "seed_urls": [
-        "https://github.com/donnemartin/system-design-primer",
-        "https://bytebytego.com/",
-        "https://martinfowler.com/architecture/"
-      ]
-    },
-    {
-      "name": "distributed_systems",
-      "queries": [
-        "distributed systems interview consistency availability partition tolerance",
-        "event driven architecture interview questions",
-        "idempotency retries distributed systems interview"
-      ],
-      "seed_urls": [
-        "https://aws.amazon.com/builders-library/",
-        "https://microservices.io/patterns/index.html",
-        "https://martinfowler.com/tags/distributed%20systems.html"
-      ]
-    },
-    {
-      "name": "backend_api",
-      "queries": [
-        "backend API design interview best practices",
-        "rest vs grpc interview discussion backend",
-        "api versioning interview questions"
-      ],
-      "seed_urls": [
-        "https://learn.microsoft.com/en-us/azure/architecture/best-practices/api-design",
-        "https://cloud.google.com/apis/design",
-        "https://swagger.io/resources/articles/best-practices-in-api-design/"
-      ]
-    },
-    {
-      "name": "database_engineering",
-      "queries": [
-        "database interview indexing sharding replication",
-        "transaction isolation levels interview",
-        "sql optimization interview questions"
-      ],
-      "seed_urls": [
-        "https://use-the-index-luke.com/",
-        "https://www.postgresql.org/docs/current/indexes-intro.html",
-        "https://www.mongodb.com/docs/manual/sharding/"
-      ]
-    },
-    {
-      "name": "observability_reliability",
-      "queries": [
-        "site reliability interview questions slis slos error budgets",
-        "observability logging tracing metrics interview",
-        "incident response postmortem interview answer"
-      ],
-      "seed_urls": [
-        "https://sre.google/sre-book/table-of-contents/",
-        "https://opentelemetry.io/docs/",
-        "https://www.atlassian.com/incident-management/postmortem"
-      ]
-    },
-    {
-      "name": "security_appsec",
-      "queries": [
-        "application security interview questions oauth jwt",
-        "owasp top 10 interview preparation",
-        "secure coding interview backend"
-      ],
-      "seed_urls": [
-        "https://owasp.org/www-project-top-ten/",
-        "https://cheatsheetseries.owasp.org/",
-        "https://auth0.com/docs/secure"
-      ]
-    },
-    {
-      "name": "cloud_platform",
-      "queries": [
-        "cloud architecture interview questions aws azure gcp",
-        "kubernetes interview questions production",
-        "autoscaling load balancing interview"
-      ],
-      "seed_urls": [
-        "https://learn.microsoft.com/en-us/azure/architecture/",
-        "https://cloud.google.com/architecture",
-        "https://kubernetes.io/docs/concepts/"
-      ]
-    },
-    {
-      "name": "coding_foundations",
-      "queries": [
-        "algorithm interview big o complexity examples",
-        "concurrency threading interview questions backend",
-        "data structures interview explanations"
-      ],
-      "seed_urls": [
-        "https://neetcode.io/practice",
-        "https://www.geeksforgeeks.org/interview-preparation-for-software-developer/",
-        "https://roadmap.sh/computer-science"
-      ]
-    },
-    {
-      "name": "behavioral_interview",
-      "queries": [
-        "software engineer behavioral interview sample answers",
-        "tell me about yourself software engineer interview",
-        "STAR method examples software developer"
-      ],
-      "seed_urls": [
-        "https://www.coursera.org/articles/behavioral-interview-questions",
-        "https://www.indeed.com/career-advice/interviewing/star-interview-method",
-        "https://www.themuse.com/advice/interview-questions-and-answers"
-      ]
-    },
-    {
-      "name": "nlp_and_llm",
-      "queries": [
-        "nlp interview questions transformer attention tokenization",
-        "llm system design interview retrieval augmented generation",
-        "embedding vector database interview questions"
-      ],
-      "seed_urls": [
-        "https://huggingface.co/docs/transformers/main/en/index",
-        "https://www.promptingguide.ai/",
-        "https://aclanthology.org/"
-      ]
-    },
-    {
-      "name": "mlops_infra",
-      "queries": [
-        "mlops interview questions model deployment monitoring",
-        "feature store interview questions",
-        "model drift detection interview answer"
-      ],
-      "seed_urls": [
-        "https://ml-ops.org/content/introduction",
-        "https://docs.aws.amazon.com/sagemaker/latest/dg/whatis.html",
-        "https://evidentlyai.com/ml-in-production"
-      ]
-    },
-    {
-      "name": "frontend_architecture",
-      "queries": [
-        "frontend system design interview questions",
-        "web performance interview questions core web vitals",
-        "state management interview react architecture"
-      ],
-      "seed_urls": [
-        "https://web.dev/learn/",
-        "https://developer.mozilla.org/en-US/docs/Web/Performance",
-        "https://react.dev/learn"
-      ]
-    }
-  ]
-}
+global:
+  version: 2
+  allow_domains:
+    - github.com
+    - raw.githubusercontent.com
+    - martinfowler.com
+    - aws.amazon.com
+    - docs.aws.amazon.com
+    - learn.microsoft.com
+    - cloud.google.com
+    - kubernetes.io
+    - postgresql.org
+    - redis.io
+    - mongodb.com
+    - opentelemetry.io
+    - prometheus.io
+    - grafana.com
+    - owasp.org
+    - cheatsheetseries.owasp.org
+    - auth0.com
+    - techinterviewhandbook.org
+    - roadmap.sh
+    - cp-algorithms.com
+    - huggingface.co
+    - arxiv.org
+    - paperswithcode.com
+    - ml-ops.org
+    - tensorflow.org
+    - kubeflow.org
+    - react.dev
+    - developer.mozilla.org
+    - web.dev
+    - grpc.io
+    - microservices.io
+    - use-the-index-luke.com
+    - sre.google
+    - bytebytego.com
+    - highscalability.com
+    - interviewing.io
+    - indeed.com
+  block_domains:
+    - pinterest.com
+    - facebook.com
+    - instagram.com
+    - tiktok.com
+    - quora.com
+  exclude_url_patterns:
+    - "/login"
+    - "/signup"
+    - "/sign-up"
+    - "/register"
+    - "/auth/"
+    - "\\?share="
+    - "\\?source="
+    - "\\?utm_"
+    - "/tag/"
+    - "/tags/"
+    - "/topics/"
+    - "/topic/"
+    - "/category/"
+    - "/categories/"
+    - "/search"
+  search_results_per_query: 12
+  max_per_domain: 28
+
+categories:
+  - name: system_design
+    tier: tier1
+    weight: 10
+    allow_domains:
+      - github.com
+      - bytebytego.com
+      - martinfowler.com
+      - highscalability.com
+      - aws.amazon.com
+      - cloud.google.com
+    queries:
+      - "system design interview questions scalability tradeoffs"
+      - "design url shortener interview architecture"
+      - "capacity planning and bottleneck analysis interview"
+    seed_urls:
+      - "https://github.com/donnemartin/system-design-primer"
+      - "https://bytebytego.com/"
+      - "https://martinfowler.com/architecture/"
+      - "https://highscalability.com/"
+      - "https://github.com/binhnguyennus/awesome-scalability"
+      - "https://github.com/umitkacar/awesome-interview"
+
+  - name: distributed_systems
+    tier: tier1
+    weight: 9
+    allow_domains:
+      - aws.amazon.com
+      - microservices.io
+      - cloud.google.com
+      - docs.aws.amazon.com
+      - martinfowler.com
+    queries:
+      - "distributed systems interview consistency availability partition tolerance"
+      - "idempotency retries distributed systems interview"
+      - "event driven architecture failure handling"
+    seed_urls:
+      - "https://aws.amazon.com/builders-library/"
+      - "https://microservices.io/patterns/index.html"
+      - "https://martinfowler.com/tags/microservices.html"
+      - "https://docs.aws.amazon.com/wellarchitected/latest/framework/welcome.html"
+      - "https://learn.microsoft.com/tr-tr/azure/architecture/guide/architecture-styles/microservices"
+      - "https://learn.microsoft.com/tr-tr/azure/architecture/microservices/design/"
+
+  - name: backend_api
+    tier: tier1
+    weight: 8
+    allow_domains:
+      - learn.microsoft.com
+      - cloud.google.com
+      - grpc.io
+      - docs.aws.amazon.com
+      - swagger.io
+    queries:
+      - "backend API design interview best practices"
+      - "rest vs grpc interview discussion backend"
+      - "api versioning interview questions"
+    seed_urls:
+      - "https://learn.microsoft.com/en-us/azure/architecture/best-practices/api-design"
+      - "https://learn.microsoft.com/tr-tr/azure/architecture/best-practices/api-design"
+      - "https://cloud.google.com/apis/design"
+      - "https://grpc.io/docs/what-is-grpc/introduction/"
+      - "https://swagger.io/resources/articles/best-practices-in-api-design/"
+      - "https://learn.microsoft.com/tr-tr/azure/well-architected/service-guides/azure-api-management"
+
+  - name: database_engineering
+    tier: tier1
+    weight: 8
+    allow_domains:
+      - use-the-index-luke.com
+      - postgresql.org
+      - redis.io
+      - mongodb.com
+    queries:
+      - "database interview indexing sharding replication"
+      - "transaction isolation levels interview"
+      - "sql optimization interview questions"
+    seed_urls:
+      - "https://use-the-index-luke.com/"
+      - "https://www.postgresql.org/docs/current/indexes-intro.html"
+      - "https://redis.io/docs/latest/"
+      - "https://www.mongodb.com/docs/manual/sharding/"
+
+  - name: observability_reliability
+    tier: tier1
+    weight: 5
+    allow_domains:
+      - sre.google
+      - opentelemetry.io
+      - prometheus.io
+      - grafana.com
+    queries:
+      - "site reliability interview questions slis slos error budgets"
+      - "observability logging tracing metrics interview"
+      - "incident response postmortem best practices"
+    seed_urls:
+      - "https://sre.google/books/"
+      - "https://opentelemetry.io/docs/"
+      - "https://prometheus.io/docs/introduction/overview/"
+      - "https://grafana.com/docs/grafana/latest/"
+
+  - name: security_appsec
+    tier: tier1
+    weight: 5
+    allow_domains:
+      - owasp.org
+      - cheatsheetseries.owasp.org
+      - auth0.com
+      - docs.aws.amazon.com
+      - learn.microsoft.com
+    queries:
+      - "application security interview questions oauth jwt"
+      - "owasp top 10 interview preparation"
+      - "secure coding interview backend"
+    seed_urls:
+      - "https://owasp.org/www-project-top-ten/"
+      - "https://cheatsheetseries.owasp.org/"
+      - "https://auth0.com/docs/secure"
+      - "https://docs.aws.amazon.com/wellarchitected/latest/security-pillar/welcome.html"
+
+  - name: cloud_platform
+    tier: tier1
+    weight: 7
+    allow_domains:
+      - learn.microsoft.com
+      - cloud.google.com
+      - kubernetes.io
+      - docs.aws.amazon.com
+    queries:
+      - "cloud architecture interview questions aws azure gcp"
+      - "kubernetes interview questions production"
+      - "autoscaling load balancing interview"
+    seed_urls:
+      - "https://learn.microsoft.com/en-us/azure/architecture/"
+      - "https://learn.microsoft.com/tr-tr/azure/architecture/"
+      - "https://cloud.google.com/architecture"
+      - "https://kubernetes.io/docs/concepts/"
+      - "https://docs.aws.amazon.com/wellarchitected/latest/framework/welcome.html"
+
+  - name: coding_foundations
+    tier: tier2
+    weight: 5
+    allow_domains:
+      - techinterviewhandbook.org
+      - roadmap.sh
+      - cp-algorithms.com
+      - github.com
+      - raw.githubusercontent.com
+      - neetcode.io
+    queries:
+      - "algorithm interview big o complexity examples"
+      - "concurrency threading interview questions backend"
+      - "data structures interview explanations"
+    seed_urls:
+      - "https://www.techinterviewhandbook.org/"
+      - "https://cp-algorithms.com/"
+      - "https://roadmap.sh/computer-science"
+      - "https://neetcode.io/practice"
+      - "https://github.com/yangshun/tech-interview-handbook"
+      - "https://github.com/kdn251/interviews"
+      - "https://github.com/trekhleb/javascript-algorithms"
+      - "https://raw.githubusercontent.com/trekhleb/javascript-algorithms/master/README.tr-TR.md"
+
+  - name: behavioral_interview
+    tier: tier2
+    weight: 15
+    allow_domains:
+      - techinterviewhandbook.org
+      - interviewing.io
+      - indeed.com
+      - hbr.org
+    queries:
+      - "software engineer behavioral interview sample answers"
+      - "STAR method examples software developer"
+      - "engineering interview communication conflict resolution"
+    seed_urls:
+      - "https://www.techinterviewhandbook.org/behavioral-interview-questions/"
+      - "https://interviewing.io/learn"
+      - "https://www.themuse.com/advice/star-interview-method"
+      - "https://hbr.org/topic/career-planning"
+      - "https://github.com/umitkacar/awesome-interview"
+
+  - name: nlp_and_llm
+    tier: tier1
+    weight: 18
+    allow_domains:
+      - huggingface.co
+      - arxiv.org
+      - paperswithcode.com
+      - promptingguide.ai
+      - github.com
+    queries:
+      - "llm system design interview retrieval augmented generation"
+      - "nlp interview questions transformer attention tokenization"
+      - "embedding vector database interview questions"
+    seed_urls:
+      - "https://huggingface.co/docs/transformers/main/en/index"
+      - "https://arxiv.org/abs/1706.03762"
+      - "https://arxiv.org/abs/2005.11401"
+      - "https://github.com/huggingface/transformers"
+      - "https://www.promptingguide.ai/"
+      - "https://github.com/khangich/machine-learning-interview"
+      - "https://learn.microsoft.com/tr-tr/azure/developer/ai/advanced-retrieval-augmented-generation"
+      - "https://learn.microsoft.com/tr-tr/azure/search/retrieval-augmented-generation-overview"
+      - "https://learn.microsoft.com/tr-tr/azure/foundry/concepts/retrieval-augmented-generation"
+
+  - name: mlops_infra
+    tier: tier1
+    weight: 6
+    allow_domains:
+      - ml-ops.org
+      - tensorflow.org
+      - kubeflow.org
+      - docs.aws.amazon.com
+      - cloud.google.com
+    queries:
+      - "mlops interview questions model deployment monitoring"
+      - "feature store interview questions"
+      - "model drift detection interview answer"
+    seed_urls:
+      - "https://ml-ops.org/"
+      - "https://www.tensorflow.org/tfx/guide"
+      - "https://www.kubeflow.org/docs/"
+      - "https://docs.aws.amazon.com/sagemaker/latest/dg/whatis.html"
+      - "https://github.com/khangich/machine-learning-interview"
+      - "https://learn.microsoft.com/tr-tr/azure/architecture/ai-ml/guide/genaiops-for-mlops"
+      - "https://learn.microsoft.com/tr-tr/azure/architecture/ai-ml/guide/mlops-maturity-model"
+      - "https://learn.microsoft.com/tr-tr/azure/architecture/ai-ml/guide/machine-learning-operations-v2"
+      - "https://learn.microsoft.com/tr-tr/azure/well-architected/ai/mlops-genaiops"
+      - "https://learn.microsoft.com/tr-tr/azure/aks/concepts-machine-learning-ops"
+
+  - name: frontend_architecture
+    tier: tier1
+    weight: 4
+    allow_domains:
+      - web.dev
+      - developer.mozilla.org
+      - react.dev
+      - github.com
+    queries:
+      - "frontend system design interview questions"
+      - "web performance interview core web vitals"
+      - "state management interview react architecture"
+    seed_urls:
+      - "https://web.dev/learn/"
+      - "https://developer.mozilla.org/en-US/docs/Web/Performance"
+      - "https://react.dev/learn"
+      - "https://tr.react.dev/learn"
+      - "https://tr.react.dev/learn/thinking-in-react"
+      - "https://tr.react.dev/reference/react/useState"
+      - "https://github.com/alan2207/bulletproof-react"

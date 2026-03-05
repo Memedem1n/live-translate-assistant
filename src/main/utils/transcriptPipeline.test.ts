@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+﻿import { describe, expect, it } from 'vitest'
 import { AssistEvent, TranscriptEvent, WorkerDiagnosticsEvent } from '../../shared/contracts'
 import {
   appendRemoteSegment,
@@ -10,13 +10,12 @@ import {
   shouldSplitRemoteSegment
 } from './transcriptPipeline'
 
-function transcript(partial: Partial<TranscriptEvent> & Pick<TranscriptEvent, 'id' | 'speaker' | 'textEn'>): TranscriptEvent {
+function transcript(partial: Partial<TranscriptEvent> & Pick<TranscriptEvent, 'id' | 'speaker' | 'text'>): TranscriptEvent {
   const now = partial.emittedMs ?? 1000
   return {
     id: partial.id,
     speaker: partial.speaker,
-    text: partial.text ?? partial.textEn,
-    textEn: partial.textEn,
+    text: partial.text,
     language: partial.language || 'en',
     languageConfidence: partial.languageConfidence ?? 0.9,
     isFinal: true,
@@ -36,7 +35,7 @@ describe('mergeTranscriptText', () => {
 
 describe('remote segment timing', () => {
   it('uses punctuation flush when sentence looks complete', () => {
-    const event = transcript({ id: 'r1', speaker: 'remote', textEn: 'How are you?' })
+    const event = transcript({ id: 'r1', speaker: 'remote', text: 'How are you?' })
     const segment = createRemoteSegment(event, 2000)
     const delay = computeSegmentFlushDelay(segment, 2200, {
       punctuationFlushMs: 320,
@@ -47,7 +46,7 @@ describe('remote segment timing', () => {
   })
 
   it('forces immediate flush when max hold reached', () => {
-    const event = transcript({ id: 'r1', speaker: 'remote', textEn: 'still talking' })
+    const event = transcript({ id: 'r1', speaker: 'remote', text: 'still talking' })
     const segment = createRemoteSegment(event, 2000)
     const delay = computeSegmentFlushDelay(segment, 7200, {
       punctuationFlushMs: 320,
@@ -58,8 +57,8 @@ describe('remote segment timing', () => {
   })
 
   it('splits segment when long gap is detected', () => {
-    const first = transcript({ id: 'r1', speaker: 'remote', textEn: 'first', emittedMs: 1000 })
-    const second = transcript({ id: 'r2', speaker: 'remote', textEn: 'second', emittedMs: 3205 })
+    const first = transcript({ id: 'r1', speaker: 'remote', text: 'first', emittedMs: 1000 })
+    const second = transcript({ id: 'r2', speaker: 'remote', text: 'second', emittedMs: 3205 })
     const segment = createRemoteSegment(first, 1000)
     const merged = appendRemoteSegment(segment, first, 1005)
     expect(shouldSplitRemoteSegment(merged, second, 1800)).toBe(true)
@@ -69,12 +68,12 @@ describe('remote segment timing', () => {
 describe('buildContextLines', () => {
   it('keeps turn-level context with configured remote/self balance', () => {
     const history: TranscriptEvent[] = [
-      transcript({ id: '1', speaker: 'remote', textEn: 'opening question' }),
-      transcript({ id: '2', speaker: 'remote', textEn: 'with more detail' }),
-      transcript({ id: '3', speaker: 'self', textEn: 'quick answer' }),
-      transcript({ id: '4', speaker: 'remote', textEn: 'follow-up question' }),
-      transcript({ id: '5', speaker: 'self', textEn: 'second answer' }),
-      transcript({ id: '6', speaker: 'remote', textEn: 'final ask' })
+      transcript({ id: '1', speaker: 'remote', text: 'opening question' }),
+      transcript({ id: '2', speaker: 'remote', text: 'with more detail' }),
+      transcript({ id: '3', speaker: 'self', text: 'quick answer' }),
+      transcript({ id: '4', speaker: 'remote', text: 'follow-up question' }),
+      transcript({ id: '5', speaker: 'self', text: 'second answer' }),
+      transcript({ id: '6', speaker: 'remote', text: 'final ask' })
     ]
 
     const assists: AssistEvent[] = [
@@ -82,8 +81,8 @@ describe('buildContextLines', () => {
         id: 'a1',
         transcriptId: '6',
         state: 'final',
-        replyEn: 'You can do this in two steps.',
-        replyTr: 'Bunu iki adimda yapabilirsiniz.',
+        answerEn: 'I would solve this in two steps.',
+        helperAnswerTr: 'Bunu iki adimda cozerim.',
         latencyMs: 800
       }
     ]
@@ -98,7 +97,7 @@ describe('buildContextLines', () => {
       '[remote] follow-up question',
       '[self] second answer',
       '[remote] final ask',
-      '[assistant] You can do this in two steps.'
+      '[assistant] I would solve this in two steps.'
     ])
   })
 })
@@ -107,7 +106,7 @@ describe('shouldDropSelfTranscriptAsEcho', () => {
   const lastRemote = transcript({
     id: 'r1',
     speaker: 'remote',
-    textEn: 'Can you share the timeline update?',
+    text: 'Can you share the timeline update?',
     emittedMs: 1000
   })
 
@@ -115,7 +114,7 @@ describe('shouldDropSelfTranscriptAsEcho', () => {
     const selfEvent = transcript({
       id: 's1',
       speaker: 'self',
-      textEn: 'can you share the timeline update',
+      text: 'can you share the timeline update',
       emittedMs: 1600
     })
 
@@ -134,7 +133,7 @@ describe('shouldDropSelfTranscriptAsEcho', () => {
     const selfEvent = transcript({
       id: 's2',
       speaker: 'self',
-      textEn: 'can you share the timeline update',
+      text: 'can you share the timeline update',
       emittedMs: 1600
     })
 
@@ -153,7 +152,7 @@ describe('shouldDropSelfTranscriptAsEcho', () => {
     const selfEvent = transcript({
       id: 's3',
       speaker: 'self',
-      textEn: 'can you share timeline update now',
+      text: 'can you share timeline update now',
       emittedMs: 1800
     })
 

@@ -12,20 +12,23 @@ if (-not (Get-Command ollama -ErrorAction SilentlyContinue)) {
 
 $profiles = @{
   "full" = @(
-    "qwen2.5:3b-instruct-q4_K_M",
+    "llama3.1:8b-instruct-q4_K_M",
     "qwen2.5:7b-instruct-q4_K_M",
-    "qwen2.5:14b-instruct-q4_K_M"
+    "mistral:7b-instruct-v0.3-q4_K_M",
+    "qwen2.5:3b-instruct-q4_K_M"
   )
   "safe" = @(
+    "llama3.1:8b-instruct-q4_K_M",
     "qwen2.5:7b-instruct-q4_K_M",
-    "qwen2.5:14b-instruct-q4_K_M"
+    "qwen2.5:3b-instruct-q4_K_M"
   )
 }
 
 $sizeHintsGb = @{
+  "llama3.1:8b-instruct-q4_K_M" = 5.1
+  "mistral:7b-instruct-v0.3-q4_K_M" = 4.3
   "qwen2.5:3b-instruct-q4_K_M" = 1.9
   "qwen2.5:7b-instruct-q4_K_M" = 4.7
-  "qwen2.5:14b-instruct-q4_K_M" = 9.0
 }
 
 $models = $profiles[$Profile]

@@ -1,103 +1,117 @@
-# Architecture (V1.5)
+# Architecture
 
 ## Goal
 
-A local-first Windows desktop assistant for live meetings with:
+Build a local-first desktop copilot for live software-engineering interviews with:
 
-- Multi-language transcript (remote + self, segment-level language detection)
-- Turkish translation of remote speech
-- Context-aware short reply suggestions in source language / EN+TR policy
-- Dual-window UI (control + transparent overlay)
+- English-first live transcripts
+- First-person interview answers grounded in candidate context
+- Optional Turkish helper translation
+- Fast local inference with a clean provider abstraction
+- Session capture for later review, fine-tuning, and evaluation
 
-## Runtime Components
+## Runtime components
 
-1. Electron Main Process
+### 1. Electron main process
 
-- Window lifecycle (control + overlay)
-- IPC orchestration and runtime state fanout
-- Session phase/state machine (`idle -> starting -> running -> ...`)
-- STT worker bridge (Python subprocess with ready handshake)
-- Local LLM orchestration via Ollama HTTP API
-- Rolling latency metrics aggregator (`stt_first_chunk`, `assist_first_token`, `assist_final`, `worker_error_rate`)
-- Encrypted history persistence + export manager (opt-in, local disk)
+- Owns the window lifecycle for control and overlay surfaces
+- Owns IPC orchestration and live session state
+- Starts and supervises the Python STT worker
+- Routes final remote transcript segments into the interview answer pipeline
+- Tracks latency metrics for transcript, first token, and final answer
+- Persists encrypted session history when enabled
 
-2. Python STT Worker (`scripts/stt_worker.py`)
+### 2. Python STT worker
 
-- Accepts NDJSON commands from stdin
-- Buffers PCM16 chunks by speaker channel
-- Uses per-channel silence/RMS gating and faster-whisper transcription
-- Uses shared runtime discovery (`scripts/runtime_env.py`) to prepare CUDA + venv NVIDIA DLL paths
-- Emits runtime health stream (`runtime_status`) including active device, warmup status, retry/fallback counters
-- Performs eager warmup before session ready, then retries CUDA once and falls back to CPU when needed
-- Supports runtime VAD updates (`update_vad`)
-- Supports language modes: `segment_auto`, `session_lock`, `manual(tr|en)`
-- Emits `ready`, `transcript`, `diagnostics`, and `error` events on stdout (NDJSON)
+File: `scripts/stt_worker.py`
 
-3. Renderer (React)
+- Accepts NDJSON commands over stdin
+- Buffers PCM16 audio for `remote` and `self`
+- Uses `faster-whisper` for transcription
+- Performs eager warmup and CUDA fallback handling
+- Emits `ready`, `transcript`, `diagnostics`, `runtime_status`, and `error` events
+- Operates in English-session mode for interview use
 
-- Control window: session controls, model settings, source selection, VAD tuning, diagnostics panel, transcript/assist logs
-- Overlay window: transparent live card with EN transcript + TR translation + EN/TR suggestion
-- Captures system+microphone audio and ships chunks to main process
-- Auto-recovery for system source disconnect (retry + fallback source switch)
+### 3. Inference and translation providers
 
-## Data Flow
+- `InferenceProvider` is the canonical answer-generation interface
+- `OllamaInferenceProvider` is the current local implementation
+- `TranslationProvider` is a separate helper path
+- Turkish translation is isolated from the main English answer path so helper failures do not block the answer
 
-1. Renderer captures audio on two channels:
+### 4. Interview orchestration
 
-- `remote`: system audio stream (meeting participants)
-- `self`: microphone stream (user voice)
+- `InterviewAssistOrchestrator` classifies the question
+- Candidate sources and knowledge sources are ranked separately
+- Personalization mode is decided before answer generation
+- `AssistService` emits streamed partial text and structured final output
 
-2. Main forwards audio chunks to STT worker when session is `running`:
+### 5. Renderer
 
-- `audio:chunk -> sttBridge -> worker stdin`
+- Control window focuses on session state, persona sources, live answer quality, and transcript review
+- Overlay window shows the latest question, main English answer, and optional Turkish helper line
+- Renderer captures system audio and microphone audio and forwards PCM chunks to main
 
-3. Session start uses worker readiness handshake:
+## Data flow
 
-- `session:start -> start_session(vad) -> worker ready -> phase running`
-- Startup uses eager warmup: STT ready + assist prewarm completes before stable running state.
+1. Renderer captures two channels:
+   - `remote`: interviewer/system audio
+   - `self`: candidate microphone
+2. Main forwards audio chunks to the STT worker.
+3. The STT worker emits transcript events.
+4. Final `remote` transcript segments are treated as interview questions.
+5. `InterviewAssistOrchestrator` assembles ranked context from profile, GitHub, notes, job description, and knowledge sources.
+6. `AssistService` calls the active `InferenceProvider`.
+7. The provider returns a structured answer contract:
+   - `answerEn`
+   - `confidence`
+   - `riskFlags`
+8. If enabled, `TranslationProvider` creates:
+   - `questionTr`
+   - `helperAnswerTr`
+9. Renderer updates both windows with answer, latency, and risk metadata.
+10. Main stores transcript and assist events in session history for export and future dataset growth.
 
-4. Worker emits transcript and diagnostics events:
+## Session data model
 
-- `worker stdout -> sttBridge -> ipc broadcast`
+Each session snapshot keeps:
 
-5. For `remote` final transcript, main calls AssistService:
+- transcript events
+- assist events
+- active STT model
+- active inference profile
+- active inference model
 
-- Builds short context from rolling transcript history
-- Calls Ollama `/api/chat` with strict JSON output contract
-- Streams partial raw output, then emits structured final assist payload
-- Uses timeout + cancellation to avoid stale assist buildup
-- Applies confidence heuristics and optional fallback prompt path when primary parse/quality is weak
+Assist events carry:
 
-6. Renderer updates:
+- `sourceText`
+- `questionTr?`
+- `answerEn?`
+- `helperAnswerTr?`
+- `supportSignals`
+- `contextLinesUsed`
+- `firstTokenMs`
+- `qualityFlags`
 
-- Control window logs full stream
-- Overlay shows latest remote sentence and matched assist card
-- Overlay runtime state is synced from main via `overlay:state`
-- Diagnostics panel merges capture health + worker diagnostics
-- Latency dashboard renders p50/p95 from `metrics:latency`
-- Control panel also shows `stt:runtime-status` (active runtime mode/device, warmup, retry/fallback).
+## Benchmarking model
 
-7. History + export:
+- Benchmark runner evaluates fixed clip and prompt sets
+- Decisions use warm runs, not cold boot
+- Primary matrix compares:
+  - `llama3.1:8b-instruct-q4_K_M`
+  - `qwen2.5:7b-instruct-q4_K_M`
+  - `mistral:7b-instruct-v0.3-q4_K_M`
+- STT sweep compares `medium.en` and `large-v3-turbo`
 
-- Session transcript/assist records are accumulated in main process during runtime
-- If `historyOptIn=true` and secure storage is available, session snapshots are encrypted and persisted under app userData
-- `history:export` produces JSON or Markdown exports under app userData export directory
+## Packaging notes
 
-## Benchmarking
+- Production packaging uses `electron-builder`
+- Windows NSIS x64 remains the primary installer target
+- `scripts/stt_worker.py` ships as an external runtime resource
 
-- `scripts/benchmark_runner.py` executes repeatable STT+assist latency runs against fixed clips in `benchmark/clips/manifest.json`.
-- Reports now split `cold_start` and `warm_gate` summaries; gate decisions are based on `warm_gate`.
-- Output reports are written to `benchmark/reports/*.json`.
+## Privacy model
 
-## Packaging Notes
-
-- Production packaging uses `electron-builder` with `asar` enabled.
-- Installer target is Windows NSIS x64.
-- `scripts/stt_worker.py` is shipped as an external runtime resource (`extraResources`).
-
-## Privacy Model
-
-- Default local-only processing
-- No cloud API key required
-- Settings stored locally; sensitive text fields encrypted if `safeStorage` is available
-- Session history persistence is opt-in and encrypted when `safeStorage` is available
+- Local-first by default
+- No cloud dependency is required for V1
+- Provider abstraction allows future SaaS endpoints without changing renderer contracts
+- Settings and session history stay local unless the user explicitly exports them

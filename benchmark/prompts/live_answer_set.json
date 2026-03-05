@@ -1,0 +1,174 @@
+{
+  "version": 1,
+  "description": "Fixed quality suite for speakable first-person interview answers.",
+  "prompts": [
+    {
+      "id": "sys_01_cache_tradeoffs",
+      "category": "system_design",
+      "question": "How would you design a cache invalidation strategy for a product catalog that changes several times per minute?",
+      "context_lines": ["Candidate has shipped catalog and search systems.", "Keep the answer practical and interview-safe."],
+      "expected_keywords": ["cache", "invalidation", "stale", "ttl", "event", "database"],
+      "strategic_keywords": ["tradeoff", "latency", "consistency"],
+      "contradiction_keywords": ["ignore consistency", "never expire"]
+    },
+    {
+      "id": "sys_02_rate_limit",
+      "category": "system_design",
+      "question": "Explain how you would add rate limiting to a public API that already serves global traffic.",
+      "context_lines": ["Candidate usually prefers simple controls first.", "Mention rollout and observability."],
+      "expected_keywords": ["rate limit", "redis", "token bucket", "global", "monitoring"],
+      "strategic_keywords": ["rollout", "tradeoff", "protect"],
+      "contradiction_keywords": ["no monitoring", "disable all traffic"]
+    },
+    {
+      "id": "sys_03_queue_backpressure",
+      "category": "system_design",
+      "question": "What would you do if a queue consumer falls behind and backlog keeps growing during peak hours?",
+      "context_lines": ["Candidate has worked with async processing.", "Focus on diagnosis and mitigation."],
+      "expected_keywords": ["queue", "backlog", "consumer", "throughput", "autoscaling"],
+      "strategic_keywords": ["bottleneck", "tradeoff", "observe"],
+      "contradiction_keywords": ["delete all messages", "ignore backlog"]
+    },
+    {
+      "id": "sys_04_multi_region",
+      "category": "system_design",
+      "question": "How would you approach a multi-region failover plan for a customer-facing service with strict uptime targets?",
+      "context_lines": ["Candidate should mention data consistency limits.", "Speak in first person."],
+      "expected_keywords": ["region", "failover", "replication", "health check", "runbook"],
+      "strategic_keywords": ["tradeoff", "rto", "rpo"],
+      "contradiction_keywords": ["manual only", "no replication"]
+    },
+    {
+      "id": "sys_05_auth_service",
+      "category": "system_design",
+      "question": "How would you separate an authentication service from the rest of a monolith without breaking existing clients?",
+      "context_lines": ["Candidate has backend migration experience.", "Mention incremental rollout."],
+      "expected_keywords": ["auth", "token", "migration", "backward compatibility", "gateway"],
+      "strategic_keywords": ["incremental", "tradeoff", "rollback"],
+      "contradiction_keywords": ["big bang", "break clients"]
+    },
+    {
+      "id": "sys_06_observability",
+      "category": "system_design",
+      "question": "What observability signals would you prioritize when stabilizing a high-latency backend service?",
+      "context_lines": ["Answer as a candidate describing your approach.", "Keep it concise."],
+      "expected_keywords": ["latency", "error rate", "trace", "metric", "bottleneck"],
+      "strategic_keywords": ["prioritize", "correlate", "tradeoff"],
+      "contradiction_keywords": ["only logs", "guess"]
+    },
+    {
+      "id": "code_01_binary_search",
+      "category": "coding",
+      "question": "How would you explain binary search in an interview if asked for both complexity and edge cases?",
+      "context_lines": ["Do not dump code.", "Explain how you would speak through it."],
+      "expected_keywords": ["binary search", "sorted", "log n", "mid", "edge case"],
+      "strategic_keywords": ["clarify", "boundary", "iterate"],
+      "contradiction_keywords": ["linear scan is faster", "unsorted"]
+    },
+    {
+      "id": "code_02_two_sum",
+      "category": "coding",
+      "question": "How would you talk through a Two Sum solution so it sounds structured instead of memorized?",
+      "context_lines": ["Keep the answer speakable.", "Candidate should explain the reasoning first."],
+      "expected_keywords": ["hash map", "complement", "o n", "iterate"],
+      "strategic_keywords": ["reasoning", "tradeoff", "edge case"],
+      "contradiction_keywords": ["sort in place first and keep indexes magically"]
+    },
+    {
+      "id": "code_03_graph_bfs",
+      "category": "coding",
+      "question": "If an interviewer asks when you would choose BFS over DFS, how would you answer?",
+      "context_lines": ["No code blocks.", "Keep it technical and direct."],
+      "expected_keywords": ["bfs", "dfs", "shortest path", "queue", "stack"],
+      "strategic_keywords": ["tradeoff", "memory", "goal"],
+      "contradiction_keywords": ["always dfs", "same thing"]
+    },
+    {
+      "id": "code_04_sql_index",
+      "category": "coding",
+      "question": "How would you explain whether to add an index to a slow query without sounding absolute?",
+      "context_lines": ["Candidate should mention read and write tradeoffs."],
+      "expected_keywords": ["index", "query plan", "write cost", "read", "selectivity"],
+      "strategic_keywords": ["measure", "tradeoff", "validate"],
+      "contradiction_keywords": ["index every column", "never check plan"]
+    },
+    {
+      "id": "code_05_concurrency",
+      "category": "coding",
+      "question": "How would you answer a concurrency bug question when the root cause points to a race condition?",
+      "context_lines": ["Mention how you would debug and fix it."],
+      "expected_keywords": ["race condition", "lock", "shared state", "reproduce", "test"],
+      "strategic_keywords": ["debug", "mitigate", "validate"],
+      "contradiction_keywords": ["impossible to test", "random"]
+    },
+    {
+      "id": "code_06_api_error_handling",
+      "category": "coding",
+      "question": "What would you say about API error handling if the interviewer pushes on reliability and client experience?",
+      "context_lines": ["Keep it concrete and production-minded."],
+      "expected_keywords": ["status code", "retry", "idempotent", "logging", "client"],
+      "strategic_keywords": ["reliability", "tradeoff", "consistency"],
+      "contradiction_keywords": ["always 200", "hide errors"]
+    },
+    {
+      "id": "persona_01_resume_project",
+      "category": "candidate_specific",
+      "candidate_specific": true,
+      "question": "Tell me about a project where you improved reliability under pressure.",
+      "context_lines": ["Candidate rebuilt alerting and deploy rollback flows.", "Candidate reduced noisy incidents with better observability."],
+      "expected_keywords": ["reliability", "incident", "rollback", "observability"],
+      "strategic_keywords": ["impact", "tradeoff", "result"],
+      "contradiction_keywords": ["I have never worked on production systems"]
+    },
+    {
+      "id": "persona_02_kafka_experience",
+      "category": "candidate_specific",
+      "candidate_specific": true,
+      "question": "How would you describe your Kafka experience to a backend interviewer?",
+      "context_lines": ["Candidate has used Kafka for async workflows.", "Mention delivery guarantees and operational lessons."],
+      "expected_keywords": ["kafka", "consumer", "partition", "delivery", "operational"],
+      "strategic_keywords": ["tradeoff", "lesson", "practical"],
+      "contradiction_keywords": ["I have never touched queues"]
+    },
+    {
+      "id": "persona_03_llm_feature",
+      "category": "candidate_specific",
+      "candidate_specific": true,
+      "question": "Explain one LLM or AI feature you have built and how you evaluated it.",
+      "context_lines": ["Candidate worked on retrieval and prompt quality.", "Mention evaluation and failure modes."],
+      "expected_keywords": ["llm", "evaluation", "retrieval", "hallucination", "prompt"],
+      "strategic_keywords": ["measure", "tradeoff", "failure"],
+      "contradiction_keywords": ["I avoid testing AI features"]
+    },
+    {
+      "id": "persona_04_conflict_story",
+      "category": "candidate_specific",
+      "candidate_specific": true,
+      "question": "Describe a time you disagreed with a teammate about implementation direction.",
+      "context_lines": ["Answer should sound calm and accountable.", "Use a realistic conflict-resolution tone."],
+      "expected_keywords": ["teammate", "tradeoff", "alignment", "outcome"],
+      "strategic_keywords": ["listen", "resolve", "result"],
+      "contradiction_keywords": ["I never disagree", "I ignore teammates"]
+    },
+    {
+      "id": "persona_05_incident_ownership",
+      "category": "candidate_specific",
+      "candidate_specific": true,
+      "question": "How do you talk about incident ownership without sounding defensive?",
+      "context_lines": ["Candidate has handled incident follow-up and root cause work.", "Focus on accountability and learning."],
+      "expected_keywords": ["incident", "ownership", "root cause", "follow-up", "learning"],
+      "strategic_keywords": ["accountability", "communicate", "prevent"],
+      "contradiction_keywords": ["blame others", "hide details"]
+    },
+    {
+      "id": "persona_06_system_design_followup",
+      "category": "candidate_specific",
+      "candidate_specific": true,
+      "question": "If asked about a system design tradeoff you changed your mind on, what would you say?",
+      "context_lines": ["Candidate should sound reflective instead of perfect.", "Mention learning and revised decision criteria."],
+      "expected_keywords": ["tradeoff", "decision", "learning", "scale"],
+      "strategic_keywords": ["reflect", "adjust", "result"],
+      "contradiction_keywords": ["I was always right", "no tradeoff"]
+    }
+  ]
+}

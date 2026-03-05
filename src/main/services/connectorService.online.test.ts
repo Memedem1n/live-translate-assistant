@@ -3,7 +3,7 @@ import os from 'os'
 import path from 'path'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const tempRoot = path.join(os.tmpdir(), 'livetranslate-connector-online-tests')
+const tempRoot = path.join(os.tmpdir(), 'interview-copilot-connector-online-tests')
 
 vi.mock('electron', () => ({
   app: {
@@ -45,3 +45,4 @@ describe('ConnectorService online', () => {
     expect(snapshot.sources.some((item) => item.type === 'github')).toBe(true)
   })
 })
+

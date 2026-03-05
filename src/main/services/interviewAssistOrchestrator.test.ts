@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+﻿import { describe, expect, it, vi } from 'vitest'
 import { InterviewAssistOrchestrator } from './interviewAssistOrchestrator'
 
 describe('InterviewAssistOrchestrator', () => {
@@ -9,9 +9,8 @@ describe('InterviewAssistOrchestrator', () => {
         transcriptId: 't1',
         state: 'final',
         latencyMs: 120,
-        replyEn: 'Sample answer',
-        replyTr: 'Ornek cevap',
-        translationTr: 'Ornek ceviri'
+        answerEn: 'I have built scalable backend systems for production workloads.',
+        helperAnswerTr: 'Uretim yuklerinde olceklenebilir backend sistemleri gelistirdim.'
       })
     } as any
     const profileMemory = {
@@ -20,19 +19,28 @@ describe('InterviewAssistOrchestrator', () => {
 
     const orchestrator = new InterviewAssistOrchestrator(assistService, profileMemory)
     const result = await orchestrator.generate({
-      model: 'qwen2.5:7b-instruct-q4_K_M',
-      baseUrl: 'http://127.0.0.1:11434',
+      providerConfig: {
+        inference: {
+          kind: 'ollama',
+          baseUrl: 'http://127.0.0.1:11434',
+          model: 'llama3.1:8b-instruct-q4_K_M'
+        },
+        translation: {
+          enabled: true,
+          kind: 'ollama',
+          baseUrl: 'http://127.0.0.1:11434',
+          model: 'qwen2.5:3b-instruct-q4_K_M'
+        }
+      },
       transcriptId: 't1',
       sourceText: 'Tell me about your backend experience',
       sourceLanguage: 'en',
-      outputPolicy: 'source_based',
       contextLines: ['[remote] tell me about your backend experience'],
-      assistantMode: 'interview',
+      productMode: 'interview_live',
       personalizationEnabled: true,
       assistPersonalizationPolicy: 'intent_aware',
       assistCompositionPolicy: 'auto',
-      assistLanguagePolicy: 'auto',
-      answerStyle: 'star_short_30s'
+      answerStyle: 'natural_first_person'
     })
 
     expect(assistService.generate).toHaveBeenCalledTimes(1)
@@ -57,19 +65,28 @@ describe('InterviewAssistOrchestrator', () => {
 
     const orchestrator = new InterviewAssistOrchestrator(assistService, profileMemory)
     const result = await orchestrator.generate({
-      model: 'qwen2.5:7b-instruct-q4_K_M',
-      baseUrl: 'http://127.0.0.1:11434',
+      providerConfig: {
+        inference: {
+          kind: 'ollama',
+          baseUrl: 'http://127.0.0.1:11434',
+          model: 'llama3.1:8b-instruct-q4_K_M'
+        },
+        translation: {
+          enabled: false,
+          kind: 'ollama',
+          baseUrl: 'http://127.0.0.1:11434',
+          model: 'qwen2.5:3b-instruct-q4_K_M'
+        }
+      },
       transcriptId: 't2',
       sourceText: 'What are your strengths?',
       sourceLanguage: 'en',
-      outputPolicy: 'source_based',
       contextLines: [],
-      assistantMode: 'meeting',
+      productMode: 'interview_live',
       personalizationEnabled: false,
       assistPersonalizationPolicy: 'intent_aware',
       assistCompositionPolicy: 'auto',
-      assistLanguagePolicy: 'auto',
-      answerStyle: 'star_short_30s'
+      answerStyle: 'natural_first_person'
     })
 
     const input = assistService.generate.mock.calls[0][0]

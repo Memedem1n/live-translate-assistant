@@ -61,7 +61,7 @@ def download_file(url: str, destination: Path) -> None:
     request = urllib.request.Request(
         url,
         headers={
-            "User-Agent": "LiveTranslate-Benchmark-Prep/1.0",
+            "User-Agent": "Interview-Copilot-Benchmark-Prep/1.0",
             "Accept": "*/*",
         },
     )
@@ -118,3 +118,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+

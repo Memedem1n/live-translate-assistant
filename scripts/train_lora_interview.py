@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
-"""
-Prepare and optionally run local LoRA training with 14B-first profile matrix and 7B fallback.
-"""
+"""Prepare and optionally run local LoRA training for Interview Copilot."""
 
 from __future__ import annotations
 
@@ -13,64 +11,76 @@ import time
 from pathlib import Path
 from typing import Any
 
+from training_common import locate_python, write_json
 
 PROFILE_PRESETS: dict[str, dict[str, Any]] = {
-    "14b_ultra_lowmem_a": {
-        "base_model": "Qwen/Qwen2.5-14B-Instruct",
-        "lora_r": 4,
-        "lora_alpha": 8,
+    "llama8b_sft_stable": {
+        "family": "llama8b",
+        "tier": "stable",
+        "base_model": "meta-llama/Llama-3.1-8B-Instruct",
+        "lora_r": 32,
+        "lora_alpha": 64,
         "lora_dropout": 0.05,
         "per_device_train_batch_size": 1,
-        "gradient_accumulation_steps": 48,
-        "learning_rate": 1.5e-4,
-        "max_seq_length": 640,
-        "target_modules": ["q_proj", "k_proj", "v_proj", "o_proj"],
-        "load_in_4bit": True,
-        "gradient_checkpointing": True,
-        "flash_attention": False,
-    },
-    "14b_ultra_lowmem_b": {
-        "base_model": "Qwen/Qwen2.5-14B-Instruct",
-        "lora_r": 8,
-        "lora_alpha": 16,
-        "lora_dropout": 0.05,
-        "per_device_train_batch_size": 1,
-        "gradient_accumulation_steps": 64,
+        "gradient_accumulation_steps": 32,
         "learning_rate": 1.2e-4,
-        "max_seq_length": 512,
-        "target_modules": ["q_proj", "k_proj", "v_proj", "o_proj"],
-        "load_in_4bit": True,
-        "gradient_checkpointing": True,
-        "flash_attention": False,
-    },
-    "14b_offload_c": {
-        "base_model": "Qwen/Qwen2.5-14B-Instruct",
-        "lora_r": 8,
-        "lora_alpha": 16,
-        "lora_dropout": 0.08,
-        "per_device_train_batch_size": 1,
-        "gradient_accumulation_steps": 80,
-        "learning_rate": 1e-4,
-        "max_seq_length": 448,
-        "target_modules": ["q_proj", "k_proj", "v_proj", "o_proj"],
-        "load_in_4bit": True,
-        "gradient_checkpointing": True,
-        "flash_attention": False,
-        "cpu_offload": True,
-    },
-    "7b_fallback": {
-        "base_model": "Qwen/Qwen2.5-7B-Instruct",
-        "lora_r": 16,
-        "lora_alpha": 32,
-        "lora_dropout": 0.05,
-        "per_device_train_batch_size": 1,
-        "gradient_accumulation_steps": 24,
-        "learning_rate": 2e-4,
-        "max_seq_length": 1024,
-        "target_modules": ["q_proj", "k_proj", "v_proj", "o_proj"],
+        "max_seq_length": 768,
+        "target_modules": "all-linear",
         "load_in_4bit": True,
         "gradient_checkpointing": True,
         "flash_attention": True,
+        "cpu_offload": False,
+    },
+    "llama8b_sft_aggressive": {
+        "family": "llama8b",
+        "tier": "aggressive",
+        "base_model": "meta-llama/Llama-3.1-8B-Instruct",
+        "lora_r": 64,
+        "lora_alpha": 128,
+        "lora_dropout": 0.05,
+        "per_device_train_batch_size": 1,
+        "gradient_accumulation_steps": 48,
+        "learning_rate": 1.0e-4,
+        "max_seq_length": 512,
+        "target_modules": "all-linear",
+        "load_in_4bit": True,
+        "gradient_checkpointing": True,
+        "flash_attention": True,
+        "cpu_offload": False,
+    },
+    "qwen7b_sft_stable": {
+        "family": "qwen7b",
+        "tier": "stable",
+        "base_model": "Qwen/Qwen2.5-7B-Instruct",
+        "lora_r": 32,
+        "lora_alpha": 64,
+        "lora_dropout": 0.05,
+        "per_device_train_batch_size": 1,
+        "gradient_accumulation_steps": 24,
+        "learning_rate": 1.4e-4,
+        "max_seq_length": 1024,
+        "target_modules": "all-linear",
+        "load_in_4bit": True,
+        "gradient_checkpointing": True,
+        "flash_attention": True,
+        "cpu_offload": False,
+    },
+    "qwen7b_sft_aggressive": {
+        "family": "qwen7b",
+        "tier": "aggressive",
+        "base_model": "Qwen/Qwen2.5-7B-Instruct",
+        "lora_r": 64,
+        "lora_alpha": 128,
+        "lora_dropout": 0.05,
+        "per_device_train_batch_size": 1,
+        "gradient_accumulation_steps": 32,
+        "learning_rate": 1.2e-4,
+        "max_seq_length": 768,
+        "target_modules": "all-linear",
+        "load_in_4bit": True,
+        "gradient_checkpointing": True,
+        "flash_attention": True,
+        "cpu_offload": False,
     },
 }
 
@@ -83,9 +93,29 @@ def line_count(path: Path) -> int:
     return sum(1 for line in path.read_text(encoding="utf-8", errors="ignore").splitlines() if line.strip())
 
 
-def write_json(path: Path, payload: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+def parse_profile_sequence(raw: str) -> list[str]:
+    requested = [item.strip() for item in raw.split(",") if item.strip()]
+    output: list[str] = []
+    for profile in requested:
+        if profile in PROFILE_PRESETS and profile not in output:
+            output.append(profile)
+    return output
+
+
+def default_sequence(profile_family: str, profile_tier: str) -> list[str]:
+    if profile_family == "qwen7b":
+        profiles = ["qwen7b_sft_stable", "qwen7b_sft_aggressive"]
+    else:
+        profiles = ["llama8b_sft_stable", "llama8b_sft_aggressive"]
+    if profile_tier == "stable":
+        return [profiles[0]]
+    if profile_tier == "aggressive":
+        return [profiles[1], profiles[0]]
+    return profiles
+
+
+def default_fallback(profile_family: str) -> str | None:
+    return "qwen7b_sft_stable" if profile_family == "llama8b" else None
 
 
 def build_config(
@@ -95,6 +125,7 @@ def build_config(
     epochs: int,
     smoke_steps: int,
     run_mode: str,
+    train_env: str,
 ) -> dict[str, Any]:
     if profile_name not in PROFILE_PRESETS:
         raise ValueError(f"Unknown profile: {profile_name}")
@@ -107,17 +138,23 @@ def build_config(
         "num_train_epochs": max(1, epochs),
         "bf16": True,
         "seed": 42,
+        "adapter": "qlora",
+        "dataset_format": "chatml",
+        "train_env": train_env,
         **base,
     }
     if run_mode == "smoke":
         config["num_train_epochs"] = 1
         config["max_steps"] = max(20, smoke_steps)
         config["save_steps"] = max(10, smoke_steps // 4)
+    if train_env == "local" and base["tier"] == "aggressive":
+        config["warning"] = "Aggressive profile is intended for local smoke or Colab full training."
     return config
 
 
 def build_command(config_path: Path) -> list[str]:
-    return ["python", "-m", "axolotl.cli.train", "--config", str(config_path)]
+    python_cmd = locate_python()
+    return [python_cmd, "-m", "axolotl.cli.train", "--config", str(config_path)]
 
 
 def command_text(command: list[str]) -> str:
@@ -148,55 +185,53 @@ def run_command(command: list[str], cwd: Path | None = None) -> dict[str, Any]:
     }
 
 
-def parse_profile_sequence(raw: str) -> list[str]:
-    requested = [item.strip() for item in raw.split(",") if item.strip()]
-    output: list[str] = []
-    for profile in requested:
-        if profile in PROFILE_PRESETS and profile not in output:
-            output.append(profile)
-    if not output:
-        return ["14b_ultra_lowmem_a", "14b_ultra_lowmem_b", "14b_offload_c"]
-    return output
+def load_quality_report(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8", errors="ignore"))
+    except Exception:
+        return {}
+    return payload if isinstance(payload, dict) else {}
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Prepare LoRA interview training command template.")
     parser.add_argument(
         "--dataset",
-        default="artifacts/finetune/interview_train.jsonl",
-        help="Path to train JSONL dataset generated by build_finetune_dataset.py",
+        default="artifacts/finetune/interview_train.sft.v2.jsonl",
+        help="Path to canonical train JSONL dataset.",
     )
     parser.add_argument(
         "--valid-dataset",
-        default="artifacts/finetune/interview_train.valid.jsonl",
+        default="artifacts/finetune/interview_train.sft.v2.valid.jsonl",
         help="Validation JSONL path.",
     )
-    parser.add_argument("--min-records", type=int, default=400, help="Minimum train records to start LoRA")
-    parser.add_argument(
-        "--profile-sequence",
-        default="14b_ultra_lowmem_a,14b_ultra_lowmem_b,14b_offload_c",
-        help="Comma-separated profile order for 14B attempts.",
-    )
-    parser.add_argument("--fallback-profile", default="7b_fallback", help="Fallback profile name.")
-    parser.add_argument("--epochs", type=int, default=3, help="Full training epochs.")
-    parser.add_argument("--smoke-steps", type=int, default=120, help="Smoke run max steps.")
-    parser.add_argument("--run-smoke", action="store_true", help="Run smoke training for profiles.")
-    parser.add_argument("--run-full", action="store_true", help="Run full training after smoke success.")
+    parser.add_argument("--min-records", type=int, default=1500)
+    parser.add_argument("--profile-family", default="llama8b", choices=["llama8b", "qwen7b"])
+    parser.add_argument("--profile-tier", default="stable", choices=["stable", "aggressive", "both"])
+    parser.add_argument("--train-env", default="local", choices=["local", "colab"])
+    parser.add_argument("--profile-sequence", default="")
+    parser.add_argument("--fallback-profile", default="")
+    parser.add_argument("--epochs", type=int, default=3)
+    parser.add_argument("--smoke-steps", type=int, default=120)
+    parser.add_argument("--run-smoke", action="store_true")
+    parser.add_argument("--run-full", action="store_true")
     parser.add_argument(
         "--auto-fallback",
         action=argparse.BooleanOptionalAction,
         default=True,
-        help="Auto run fallback profile when 14B profiles fail.",
+    )
+    parser.add_argument("--out-dir", default="artifacts/finetune/lora_interview")
+    parser.add_argument("--attempts-path", default="artifacts/finetune/training_attempts.v2.json")
+    parser.add_argument(
+        "--quality-report",
+        default="artifacts/finetune/interview_quality_report.v2.json",
     )
     parser.add_argument(
-        "--out-dir",
-        default="artifacts/finetune/lora_interview",
-        help="Output directory for training metadata",
-    )
-    parser.add_argument(
-        "--attempts-path",
-        default="artifacts/finetune/training_attempts.json",
-        help="Attempt report JSON path.",
+        "--require-quality-pass",
+        action=argparse.BooleanOptionalAction,
+        default=True,
     )
     args = parser.parse_args()
 
@@ -208,29 +243,53 @@ def main() -> None:
 
     train_records = line_count(train_path)
     valid_records = line_count(valid_path)
-    blocked = train_records < args.min_records
+    blocked_reasons: list[str] = []
+    if train_records < args.min_records:
+        blocked_reasons.append(f"records_below_threshold({train_records}<{args.min_records})")
 
-    attempts: list[dict[str, Any]] = []
-    profile_sequence = parse_profile_sequence(args.profile_sequence)
+    quality_report_path = Path(args.quality_report).resolve()
+    quality_payload = load_quality_report(quality_report_path)
+    quality_report_summary: dict[str, Any] = {}
+    if args.require_quality_pass:
+        if not quality_payload:
+            blocked_reasons.append(f"quality_report_missing_or_invalid({quality_report_path})")
+        else:
+            quality_report_summary = {
+                "path": str(quality_report_path),
+                "blocked": bool(quality_payload.get("blocked")),
+                "blocked_reasons": quality_payload.get("blocked_reasons") or [],
+                "metrics": quality_payload.get("metrics") or {},
+            }
+            if bool(quality_payload.get("blocked")):
+                blocked_reasons.append("quality_gate_blocked")
 
+    profile_sequence = parse_profile_sequence(args.profile_sequence) or default_sequence(
+        args.profile_family, args.profile_tier
+    )
+    fallback_profile = args.fallback_profile.strip() or default_fallback(args.profile_family)
+    if fallback_profile and fallback_profile not in PROFILE_PRESETS:
+        blocked_reasons.append(f"unknown_fallback_profile({fallback_profile})")
+
+    if args.train_env == "local" and args.run_full:
+        aggressive_requested = any(PROFILE_PRESETS[name]["tier"] == "aggressive" for name in profile_sequence)
+        if aggressive_requested and args.profile_family == "llama8b":
+            blocked_reasons.append("local_full_train_for_aggressive_profile_not_supported")
+
+    blocked = len(blocked_reasons) > 0
     generated: list[dict[str, Any]] = []
-    for profile in profile_sequence + ([args.fallback_profile] if args.fallback_profile in PROFILE_PRESETS else []):
-        smoke_cfg = build_config(profile, train_path, valid_path, args.epochs, args.smoke_steps, "smoke")
-        full_cfg = build_config(profile, train_path, valid_path, args.epochs, args.smoke_steps, "full")
-
+    for profile in profile_sequence + ([fallback_profile] if fallback_profile else []):
+        if profile not in PROFILE_PRESETS:
+            continue
+        smoke_cfg = build_config(profile, train_path, valid_path, args.epochs, args.smoke_steps, "smoke", args.train_env)
+        full_cfg = build_config(profile, train_path, valid_path, args.epochs, args.smoke_steps, "full", args.train_env)
         smoke_path = out_dir / f"train_config.{profile}.smoke.json"
         full_path = out_dir / f"train_config.{profile}.full.json"
         write_json(smoke_path, smoke_cfg)
         write_json(full_path, full_cfg)
-
         smoke_cmd = build_command(smoke_path)
         full_cmd = build_command(full_path)
-        (out_dir / f"train_command.{profile}.smoke.txt").write_text(
-            command_text(smoke_cmd) + "\n", encoding="utf-8"
-        )
-        (out_dir / f"train_command.{profile}.full.txt").write_text(
-            command_text(full_cmd) + "\n", encoding="utf-8"
-        )
+        (out_dir / f"train_command.{profile}.smoke.txt").write_text(command_text(smoke_cmd) + "\n", encoding="utf-8")
+        (out_dir / f"train_command.{profile}.full.txt").write_text(command_text(full_cmd) + "\n", encoding="utf-8")
         generated.append(
             {
                 "profile": profile,
@@ -238,19 +297,21 @@ def main() -> None:
                 "full_config": str(full_path),
                 "smoke_command": command_text(smoke_cmd),
                 "full_command": command_text(full_cmd),
+                "oom_risk": "high"
+                if PROFILE_PRESETS[profile]["tier"] == "aggressive" and args.train_env == "local"
+                else "medium" if PROFILE_PRESETS[profile]["tier"] == "aggressive" else "low",
             }
         )
 
+    attempts: list[dict[str, Any]] = []
     chosen_profile: str | None = None
     fallback_used = False
-
     if not blocked and (args.run_smoke or args.run_full):
         for profile in profile_sequence:
             smoke_config = out_dir / f"train_config.{profile}.smoke.json"
             full_config = out_dir / f"train_config.{profile}.full.json"
             smoke_cmd = build_command(smoke_config)
             full_cmd = build_command(full_config)
-
             smoke_result = run_command(smoke_cmd) if args.run_smoke else {"ok": True, "skipped": True}
             attempts.append(
                 {
@@ -260,10 +321,8 @@ def main() -> None:
                     "timestamp_ms": int(time.time() * 1000),
                 }
             )
-
             if not smoke_result.get("ok"):
                 continue
-
             if args.run_full:
                 full_result = run_command(full_cmd)
                 attempts.append(
@@ -281,31 +340,28 @@ def main() -> None:
                 chosen_profile = profile
                 break
 
-        if not chosen_profile and args.auto_fallback and args.fallback_profile in PROFILE_PRESETS:
+        if not chosen_profile and args.auto_fallback and fallback_profile:
             fallback_used = True
-            profile = args.fallback_profile
-            smoke_config = out_dir / f"train_config.{profile}.smoke.json"
-            full_config = out_dir / f"train_config.{profile}.full.json"
+            smoke_config = out_dir / f"train_config.{fallback_profile}.smoke.json"
+            full_config = out_dir / f"train_config.{fallback_profile}.full.json"
             smoke_cmd = build_command(smoke_config)
             full_cmd = build_command(full_config)
-
             smoke_result = run_command(smoke_cmd) if args.run_smoke else {"ok": True, "skipped": True}
             attempts.append(
                 {
-                    "profile": profile,
+                    "profile": fallback_profile,
                     "phase": "smoke",
                     "result": smoke_result,
                     "timestamp_ms": int(time.time() * 1000),
                     "fallback": True,
                 }
             )
-
             if smoke_result.get("ok"):
                 if args.run_full:
                     full_result = run_command(full_cmd)
                     attempts.append(
                         {
-                            "profile": profile,
+                            "profile": fallback_profile,
                             "phase": "full",
                             "result": full_result,
                             "timestamp_ms": int(time.time() * 1000),
@@ -313,20 +369,23 @@ def main() -> None:
                         }
                     )
                     if full_result.get("ok"):
-                        chosen_profile = profile
+                        chosen_profile = fallback_profile
                 else:
-                    chosen_profile = profile
+                    chosen_profile = fallback_profile
 
     attempts_payload = {
         "ok": True,
         "blocked": blocked,
-        "blocked_reason": f"records_below_threshold({train_records}<{args.min_records})" if blocked else None,
+        "blocked_reason": blocked_reasons[0] if blocked_reasons else None,
+        "blocked_reasons": blocked_reasons,
         "train_records": train_records,
         "valid_records": valid_records,
+        "quality_report": quality_report_summary,
         "generated": generated,
         "attempts": attempts,
         "chosen_profile": chosen_profile,
         "fallback_used": fallback_used,
+        "train_env": args.train_env,
         "timestamp_ms": int(time.time() * 1000),
     }
     write_json(attempts_path, attempts_payload)
@@ -338,8 +397,10 @@ def main() -> None:
                     "ok": False,
                     "blocked": True,
                     "reason": attempts_payload["blocked_reason"],
+                    "reasons": blocked_reasons,
                     "train_records": train_records,
                     "valid_records": valid_records,
+                    "quality_report": quality_report_summary,
                     "attempts_path": str(attempts_path),
                     "generated_profiles": [item["profile"] for item in generated],
                 },

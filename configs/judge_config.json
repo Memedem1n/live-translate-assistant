@@ -1,0 +1,10 @@
+{
+  "provider_kind": "disabled",
+  "base_url": "http://127.0.0.1:11434/v1",
+  "model": "",
+  "api_key_env": "OPENAI_API_KEY",
+  "temperature": 0,
+  "max_retries": 2,
+  "timeout_sec": 45,
+  "allow_raw_sessions": true
+}

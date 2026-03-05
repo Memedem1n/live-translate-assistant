@@ -1,14 +1,13 @@
-import {
-  AssistEvent,
-  AssistIntentClass,
-  AssistOutputPolicy,
+﻿import {
   AssistAnswerMode,
+  AssistEvent,
   AssistCompositionPolicy,
-  AssistLanguagePolicy,
+  AssistIntentClass,
   AssistPersonalizationPolicy,
-  AssistantMode,
   InterviewAnswerStyle,
-  ProfileSourceType
+  ProductMode,
+  ProfileSourceType,
+  ProviderConfig
 } from '../../shared/contracts'
 import { AssistService } from './assistService'
 import { ProfileMemoryService } from './profileMemoryService'
@@ -18,19 +17,16 @@ const CANDIDATE_SOURCE_TYPES: ProfileSourceType[] = ['cv', 'github', 'linkedin',
 const KNOWLEDGE_SOURCE_TYPES: ProfileSourceType[] = ['knowledge_base', 'web_corpus', 'glossary']
 
 interface GenerateInterviewAssistInput {
-  model: string
-  baseUrl: string
+  providerConfig: ProviderConfig
   transcriptId: string
   segmentId?: string
   sourceText: string
   sourceLanguage?: string
-  outputPolicy?: AssistOutputPolicy
   contextLines: string[]
-  assistantMode: AssistantMode
+  productMode: ProductMode
   personalizationEnabled: boolean
   assistPersonalizationPolicy: AssistPersonalizationPolicy
   assistCompositionPolicy: AssistCompositionPolicy
-  assistLanguagePolicy: AssistLanguagePolicy
   answerStyle: InterviewAnswerStyle
   signal?: AbortSignal
   timeoutMs?: number
@@ -44,29 +40,21 @@ export class InterviewAssistOrchestrator {
   ) {}
 
   async generate(input: GenerateInterviewAssistInput): Promise<AssistEvent> {
-    const intentClass: AssistIntentClass | undefined =
-      input.assistantMode === 'interview' ? classifyAssistIntent(input.sourceText) : undefined
-    const answerMode: AssistAnswerMode | undefined =
-      input.assistantMode === 'interview' && intentClass
-        ? resolveAssistAnswerMode(intentClass, input.assistCompositionPolicy)
-        : undefined
+    const intentClass: AssistIntentClass = classifyAssistIntent(input.sourceText)
+    const answerMode: AssistAnswerMode = resolveAssistAnswerMode(intentClass, input.assistCompositionPolicy)
     const personalizedContextLines = this.resolvePersonalizedContextLines(input, intentClass)
 
     const response = await this.assistService.generate({
-      model: input.model,
-      baseUrl: input.baseUrl,
+      providerConfig: input.providerConfig,
       transcriptId: input.transcriptId,
       segmentId: input.segmentId,
       sourceText: input.sourceText,
       sourceLanguage: input.sourceLanguage,
-      outputPolicy: input.outputPolicy,
       contextLines: input.contextLines,
       personalizedContextLines,
-      assistantMode: input.assistantMode,
       answerStyle: input.answerStyle,
       intentClass,
       answerMode,
-      languagePolicy: input.assistLanguagePolicy,
       signal: input.signal,
       timeoutMs: input.timeoutMs,
       onPartial: input.onPartial
@@ -76,21 +64,23 @@ export class InterviewAssistOrchestrator {
       ...response,
       intentClass,
       answerMode,
-      languagePolicy: input.assistLanguagePolicy,
       personalizationMode: personalizedContextLines.length > 0 ? 'personalized' : 'generic_fallback'
     }
   }
 
   private resolvePersonalizedContextLines(
     input: GenerateInterviewAssistInput,
-    intentClass?: AssistIntentClass
+    intentClass: AssistIntentClass
   ): string[] {
-    if (input.assistantMode !== 'interview' || !input.personalizationEnabled) {
+    if (input.productMode !== 'interview_live' && input.productMode !== 'interview_practice') {
+      return []
+    }
+    if (!input.personalizationEnabled) {
       return []
     }
 
     const policy = input.assistPersonalizationPolicy
-    if (policy === 'always' || !intentClass) {
+    if (policy === 'always') {
       return this.combineUnique([
         ...this.lookupContext(input.sourceText, 5, CANDIDATE_SOURCE_TYPES, 'mixed'),
         ...this.lookupContext(input.sourceText, 2, KNOWLEDGE_SOURCE_TYPES, 'mixed')

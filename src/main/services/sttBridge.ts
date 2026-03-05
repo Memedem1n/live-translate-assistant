@@ -2,10 +2,8 @@ import { EventEmitter } from 'events'
 import { ChildProcessWithoutNullStreams, spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import {
-  MeetingLanguage,
   AudioChunkInput,
   Speaker,
-  SttLanguageMode,
   SttRuntimeMode,
   SttRuntimeStatusEvent,
   TranscriptEvent,
@@ -81,8 +79,6 @@ export interface SttBridgeOptions {
 interface StartOptions {
   vad?: VadConfig
   runtimeMode?: SttRuntimeMode
-  sttLanguageMode?: SttLanguageMode
-  manualSttLanguage?: MeetingLanguage
   cudaRetryCount?: number
   eagerWarmup?: boolean
   timeoutMs?: number
@@ -138,8 +134,8 @@ export class SttBridge extends EventEmitter {
       type: 'start_session',
       model,
       runtime_mode: options?.runtimeMode || 'auto',
-      language_mode: options?.sttLanguageMode || 'segment_auto',
-      manual_language: options?.manualSttLanguage || 'tr',
+      language_mode: 'manual',
+      manual_language: 'en',
       cuda_retry_count: options?.cudaRetryCount ?? 1,
       eager_warmup: options?.eagerWarmup ?? true,
       vad: options?.vad
@@ -185,7 +181,6 @@ export class SttBridge extends EventEmitter {
       id: randomUUID(),
       speaker,
       text: normalized,
-      textEn: normalized,
       language,
       languageConfidence: 1,
       isFinal: true,
@@ -324,7 +319,6 @@ export class SttBridge extends EventEmitter {
           id: randomUUID(),
           speaker: payload.speaker,
           text: payload.text,
-          textEn: payload.text,
           language: payload.language || 'unknown',
           languageConfidence:
             payload.language_probability === undefined

@@ -1,4 +1,11 @@
-# IPC/API Spec (V1.5)
+# IPC/API Spec
+
+## Product assumptions
+
+- Primary mode: live technical interview support
+- Canonical answer language: English
+- Turkish is an optional helper translation layer
+- Provider configuration is runtime-pluggable
 
 ## IPC Invokes
 
@@ -6,18 +13,22 @@
 
 Returns `AppSettings`.
 
-Notable fields:
+Important fields:
 
-- `sttRuntimeMode: "auto" | "cuda" | "cpu"`
+- `productMode: "interview_live" | "interview_practice"`
+- `sessionLanguage: "en"`
+- `inferenceProfileId: "llama3_1_8b_primary" | "qwen2_5_7b_latency" | "mistral_7b_natural"`
+- `helperTranslationEnabled: boolean`
+- `providerConfig: { inference, translation }`
 
 ### `settings:update`
 
-Input: `Partial<AppSettings>`
+Input: `Partial<AppSettings>`  
 Output: `AppSettings`
 
 ### `audio:sources`
 
-Output: `Array<{id: string; name: string}>`
+Output: `Array<{ id: string; name: string }>`
 
 ### `history:list`
 
@@ -31,8 +42,10 @@ Output:
 Input:
 
 - `format: "json" | "markdown"`
-- `sessionId?`: string (optional; when omitted, exports active or last session snapshot)
-  Output:
+- `sessionId?`: string
+
+Output:
+
 - `success: boolean`
 - `format: "json" | "markdown"`
 - `path: string`
@@ -40,7 +53,17 @@ Input:
 
 ### `session:start`
 
-Input: `{ mode: "meeting"; sttModel?: string; sttRuntimeMode?: "auto" | "cuda" | "cpu"; sttLanguageMode?: "segment_auto" | "session_lock" | "manual"; manualSttLanguage?: "tr" | "en"; vad?: VadConfig }`
+Input:
+
+```ts
+{
+  mode: "interview_live" | "interview_practice"
+  sttModel?: string
+  sttRuntimeMode?: "auto" | "cuda" | "cpu"
+  vad?: VadConfig
+}
+```
+
 Output: `{ success: boolean }`
 
 ### `session:stop`
@@ -49,17 +72,38 @@ Output: `{ success: boolean }`
 
 ### `session:update-vad`
 
-Input: `{ vad: VadConfig; applyMode?: "live" | "restart" }`
+Input: `{ vad: VadConfig; applyMode?: "live" | "restart" }`  
 Output: `{ success: boolean; applied: boolean; requiresRestart: boolean }`
 
 ### `transcript:inject`
 
-Input: `{ speaker: "remote" | "self"; text: string; language?: string }`
+Input: `{ speaker: "remote" | "self"; text: string; language?: string }`  
 Output: `{ success: boolean }`
+
+### `assist:practice-generate`
+
+Input:
+
+```ts
+{
+  text: string
+  language?: string
+}
+```
+
+Output:
+
+```ts
+{
+  success: boolean
+  assist?: AssistEvent
+  error?: string
+}
+```
 
 ### `overlay:set`
 
-Input: `{ visible?: boolean; opacity?: number; clickThrough?: boolean }`
+Input: `{ visible?: boolean; opacity?: number; clickThrough?: boolean }`  
 Output: `{ success: boolean }`
 
 ### `assistant:toggle-mute`
@@ -74,7 +118,7 @@ Input:
 
 - `speaker`: `"remote" | "self"`
 - `pcmBase64`: base64 PCM16LE mono
-- `sampleRate`: integer (16000 default)
+- `sampleRate`: integer
 
 ## IPC Events
 
@@ -85,7 +129,6 @@ Payload:
 - `id`
 - `speaker`
 - `text`
-- `textEn` (legacy alias)
 - `language`
 - `languageConfidence?`
 - `isFinal`
@@ -102,17 +145,22 @@ Payload:
 - `transcriptId`
 - `sourceLanguage?`
 - `sourceText?`
-- `outputPolicy?`: `source_based | bilingual`
-- `state`: `partial | final | error`
-- `rawText?`
-- `translationTr?`
-- `replyEn?`
-- `replyTr?`
+- `questionTr?`
+- `answerEn?`
+- `helperAnswerTr?`
 - `confidence?`
+- `qualityFlags?`
+- `supportSignals?`
+- `contextLinesUsed?`
 - `latencyMs`
 - `firstTokenMs?`
 - `fallbackUsed?`
 - `parseMode?`: `primary | fallback`
+- `personalizationMode?`
+- `intentClass?`
+- `answerMode?`
+- `state`: `partial | final | error`
+- `rawText?`
 - `error?`
 
 ### `session:state`
@@ -173,4 +221,4 @@ Payload:
 
 ### `shortcut:mute-toggle`
 
-Payload: `boolean` muted state.
+Payload: `boolean`

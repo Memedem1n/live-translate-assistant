@@ -86,6 +86,18 @@ export const useAppStore = create<AppStore>((set) => ({
         ? {
             ...state.settings,
             ...updates,
+            providerConfig: updates.providerConfig
+              ? {
+                  inference: {
+                    ...state.settings.providerConfig.inference,
+                    ...(updates.providerConfig.inference || {})
+                  },
+                  translation: {
+                    ...state.settings.providerConfig.translation,
+                    ...(updates.providerConfig.translation || {})
+                  }
+                }
+              : state.settings.providerConfig,
             hotkeys: {
               ...state.settings.hotkeys,
               ...(updates.hotkeys || {})

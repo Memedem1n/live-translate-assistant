@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "answer_format": "speakable_first_person",
+  "weights": {
+    "latency": 0.4,
+    "answer_quality": 0.35,
+    "personalization_fidelity": 0.15,
+    "stability": 0.1
+  },
+  "scored_dimensions": [
+    "correctness",
+    "groundedness",
+    "speakability",
+    "strategic_usefulness",
+    "naturalness"
+  ],
+  "hard_fail_rules": {
+    "assist_first_token_p50_ms_gt": 900,
+    "assist_final_p50_ms_gt": 2500,
+    "malformed_output_rate_gt": 0.02,
+    "critical_hallucination_rate_gte": 0.03,
+    "persona_contradiction_rate_gte": 0.05
+  },
+  "llama_vs_qwen_rule": {
+    "promote_llama_if_quality_gap_gte": 0.3,
+    "promote_llama_if_latency_penalty_lte_ratio": 0.15,
+    "otherwise": "promote_qwen"
+  }
+}

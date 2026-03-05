@@ -139,7 +139,7 @@ function createTray(): void {
   if (tray) return
 
   tray = new Tray(resolveTrayImage())
-  tray.setToolTip('LiveTranslate Assistant')
+  tray.setToolTip('Interview Copilot')
   tray.on('double-click', () => {
     showControlWindowFromMain()
   })
@@ -186,7 +186,7 @@ function registerShortcuts(): void {
 }
 
 app.whenReady().then(() => {
-  electronApp.setAppUserModelId('com.livetranslate.assistant')
+  electronApp.setAppUserModelId('com.interviewcopilot.assistant')
 
   session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
     if (permission === 'media' || permission === 'display-capture') {
@@ -241,3 +241,5 @@ app.on('will-quit', () => {
   tray = null
   cleanupIpcHandlers()
 })
+
+

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Shared CUDA/runtime discovery helpers for LiveTranslate Python scripts.
+Shared CUDA/runtime discovery helpers for Interview Copilot Python scripts.
 """
 
 from __future__ import annotations
@@ -218,3 +218,4 @@ def load_whisper_model(
 def is_cuda_runtime_error(error: object) -> bool:
     message = str(error).lower()
     return any(marker in message for marker in CUDA_ERROR_MARKERS)
+

@@ -1,61 +1,60 @@
-# Last Session - 2026-03-04
+# Last Session - 2026-03-06
 
 ## Completed Today
 
-- Stabilized STT runtime lifecycle and diagnostics flow:
-  - runtime mode: `auto | cuda | cpu`
-  - eager worker warmup before ready
-  - cuda retry + automatic cpu fallback
-  - renderer runtime status visibility
-- Extended control and overlay behavior for more reliable live usage:
-  - runtime/degraded state signals in UI
-  - manual assist generation path
-  - transcript/assist flow improvements in interview mode
-- Added personalization infrastructure:
-  - profile source ingestion (`cv`, `github`, `linkedin`, `job_desc`, `note`, `knowledge_base`, `web_corpus`, `glossary`)
-  - context preview + reindex path
-  - profile memory orchestration and tests
-- Added corpus/glossary/finetune preparation scripts:
-  - `scripts/sync_web_corpus.py`
-  - `scripts/build_glossary_lexicon.py`
-  - `scripts/build_finetune_dataset.py`
-  - `scripts/train_lora_interview.py`
-  - `scripts/check_train_env.py`
-  - `scripts/package_lora_for_ollama.py`
-- Added train environment split to avoid runtime/train dependency conflicts:
-  - `scripts/setup_train_env.ps1`
-  - `scripts/run_train_python.ps1`
-  - new npm scripts under `finetune:*`
-- Improved dataset builder constraints:
-  - source-mix enforcement toggle (`--enforce-source-mix`, `--no-enforce-source-mix`)
-  - glossary ratio balancing and overflow trimming
-- Disk cleanup performed:
-  - removed build/artifact leftovers
-  - removed unused local models (`qwen2.5:3b`, `qwen2.5:7b`)
-  - kept active set: `qwen2.5:14b` + `large-v3`
+- Implemented benchmark lock groundwork:
+  - provider-agnostic benchmark runner for `ollama` and `openai_compatible`
+  - fixed prompt quality suite and scoring rubric
+  - model sweep recommendation logic for `Llama 3.1 8B` vs `Qwen 2.5 7B`
+- Implemented session review flow:
+  - review labels: `chosen | rejected | skipped | unreviewed`
+  - review tags persisted in local encrypted history
+  - session detail + review update IPC
+  - control window review queue and session detail panel
+- Implemented DPO preparation upgrades:
+  - reviewed session export ingestion in `build_dpo_pairs.py`
+  - sampled completion support for prompt-aligned pair building
+  - `prompt_key` emission in completion sampling script
+- Added benchmark artifacts and scripts:
+  - `benchmark/prompts/live_answer_set.json`
+  - `benchmark/prompts/quality_rubric.json`
+  - updated `package.json` commands for benchmark and DPO prep
 
 ## Validation Status
 
+- `python -m py_compile` passed for updated Python scripts
 - `npm run typecheck` passed
 - `npm run test` passed
-- smoke corpus/glossary/dataset flow passed
-- `finetune:prepare-lora` template generation works and blocks correctly when dataset is below threshold
-- `finetune:check-env` currently reports missing train dependencies in `.venvtrain311` (expected until full train env bootstrap is run)
+- `npm run build` passed
+- `build_dpo_pairs.py` runs successfully with current inputs
 
-## Current Footprint
+## Current State
 
-- project dir: ~2.86 GB
-- ollama models: ~8.37 GB
-- huggingface cache: ~2.90 GB
-- active model/cache set significantly reduced for day-end stability
+- Code path is ready for:
+  - Stage A benchmark
+  - reviewed session labeling
+  - DPO pool generation
+- Actual benchmark has not been run yet
+- Actual reviewed session exports do not exist yet
+- Current DPO pair count is `0` because:
+  - `artifacts/session_exports` is missing
+  - `artifacts/curation/sft_completion_samples.jsonl` is missing
 
-## Next Session Priority
+## Tomorrow First Priority
 
-1. Bootstrap train environment completely:
-   - `npm run finetune:setup-env`
-   - `npm run finetune:check-env` should return `ok=true`
-2. Run LoRA smoke attempts:
-   - `npm run finetune:prepare-lora:smoke`
-   - inspect `artifacts/finetune/training_attempts.json`
-3. If smoke succeeds, move to full training gate with selected profile sequence.
-4. After training path is stable, run D-disk migration phase (project + model/cache path strategy).
+1. Run Stage A benchmark
+   - expected duration: `30-50 min`
+   - goal: lock local default model
+2. Pick the winner model
+   - `Llama 3.1 8B` or `Qwen 2.5 7B`
+3. Run stable LoRA smoke on the winner
+4. Collect reviewed session exports
+5. Generate sampled completions + DPO pairs
+
+## Useful Commands
+
+```powershell
+npm run benchmark:sweep
+npm run finetune:sample-dpo
+npm run finetune:build-dpo-pairs
+```

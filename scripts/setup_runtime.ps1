@@ -96,6 +96,13 @@ function Ensure-VenvAndDeps {
   Write-Step "Dokuman import ve OCR bagimliliklari kuruluyor..."
   & $venvPython -m pip install pypdf python-docx pillow pypdfium2 rapidocr-onnxruntime
 
+  Write-Step "Web corpus extraction bagimliliklari kuruluyor..."
+  try {
+    & $venvPython -m pip install trafilatura readability-lxml beautifulsoup4 lxml
+  } catch {
+    Write-Host "[setup][warn] Optional extraction deps install failed; fallback extractor will be used." -ForegroundColor Yellow
+  }
+
   Write-Step "Kurulum dogrulaniyor..."
   & $venvPython -c "import faster_whisper, pypdf, docx, pypdfium2, rapidocr_onnxruntime; print('runtime_ok=1')"
 }
