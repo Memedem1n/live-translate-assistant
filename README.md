@@ -63,15 +63,15 @@ Interview Copilot is a local-first Windows desktop copilot for live software-eng
    - `npm run finetune:dataset`
 5. Run dataset quality checks:
    - `npm run finetune:quality-check`
-6. Prepare the separate LoRA training environment:
-   - `npm run finetune:setup-env`
-7. Verify the local training environment:
-   - `npm run finetune:check-env`
-8. Prepare or smoke-test LoRA commands:
-   - `npm run finetune:prepare-lora`
-   - `npm run finetune:prepare-lora:smoke`
-9. Package the trained adapter for Ollama:
-   - `npm run finetune:package-ollama`
+6. Recommended Windows-native HF LoRA path:
+   - `npm run finetune:hf:setup-env`
+   - `npm run finetune:hf:check-env`
+   - `npm run finetune:hf:prepare`
+   - `npm run finetune:hf:smoke`
+   - `npm run finetune:hf:full`
+   - `npm run finetune:hf:package-ollama`
+7. Export a clean remote/Colab bundle when needed:
+   - `npm run finetune:export-bundle`
 
 ## Session history
 

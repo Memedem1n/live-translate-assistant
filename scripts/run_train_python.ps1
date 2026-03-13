@@ -13,7 +13,7 @@ $ErrorActionPreference = "Stop"
 
 $venvPython = Join-Path $VenvPath "Scripts\python.exe"
 if (-not (Test-Path $venvPython)) {
-  throw "Train venv bulunamadi: $venvPython. Once npm run finetune:setup-env calistirin."
+  throw "Train venv bulunamadi: $venvPython. Once npm run finetune:hf:setup-env calistirin."
 }
 
 function Add-ToPathIfExists {
@@ -38,4 +38,3 @@ if (Test-Path $venvNvidia) {
 Write-Host "[train-py] using: $venvPython"
 & $venvPython -u $ScriptPath @ScriptArgs
 exit $LASTEXITCODE
-

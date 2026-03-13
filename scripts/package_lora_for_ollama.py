@@ -10,10 +10,10 @@ from pathlib import Path
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Prepare Ollama Modelfile for a LoRA adapter.")
-    parser.add_argument("--base", default="llama3.1:8b-instruct-q4_K_M", help="Base Ollama model")
+    parser.add_argument("--base", default="qwen2.5:3b-instruct-q4_K_M", help="Base Ollama model")
     parser.add_argument(
         "--adapter-dir",
-        default="artifacts/finetune/lora_interview",
+        default="artifacts/finetune/hf_qwen3b/full",
         help="Directory containing trained LoRA adapter files",
     )
     parser.add_argument(
@@ -23,10 +23,10 @@ def main() -> int:
     )
     parser.add_argument(
         "--out-modelfile",
-        default="artifacts/finetune/lora_interview/Modelfile",
+        default="artifacts/finetune/hf_qwen3b/full/Modelfile",
         help="Output Modelfile path",
     )
-    parser.add_argument("--model-name", default="interview-copilot-lora", help="Target Ollama model name")
+    parser.add_argument("--model-name", default="interview-copilot-hf-qwen3b", help="Target Ollama model name")
     parser.add_argument("--create", action="store_true", help="Run `ollama create` after writing Modelfile")
     args = parser.parse_args()
 

@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import argparse
+import importlib
+import importlib.metadata
 import json
 import shutil
 import subprocess
@@ -22,9 +25,32 @@ def run_cmd(args: list[str]) -> tuple[int, str]:
         return 1, str(exc)
 
 
+def probe_module(module_name: str) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "installed": False,
+        "version": None,
+        "error": None,
+    }
+    try:
+        importlib.import_module(module_name)
+        payload["installed"] = True
+        try:
+            payload["version"] = importlib.metadata.version(module_name)
+        except importlib.metadata.PackageNotFoundError:
+            payload["version"] = None
+    except Exception as exc:
+        payload["error"] = str(exc)
+    return payload
+
+
 def main() -> int:
+    parser = argparse.ArgumentParser(description="Validate the train Python environment.")
+    parser.add_argument("--backend", default="hf", choices=["hf"])
+    args = parser.parse_args()
+
     payload: dict[str, object] = {
         "ok": True,
+        "backend_requested": args.backend,
         "python": sys.executable,
     }
 
@@ -51,11 +77,23 @@ def main() -> int:
         payload["cuda_available"] = False
         payload["cuda_device_count"] = 0
 
-    code, output = run_cmd([sys.executable, "-m", "pip", "show", "axolotl"])
-    payload["axolotl_installed"] = code == 0
-    payload["axolotl_info"] = output if code == 0 else None
+    hf_modules = ["accelerate", "bitsandbytes", "datasets", "peft", "safetensors", "transformers", "trl"]
+    hf_status = {name: probe_module(name) for name in hf_modules}
+    payload["hf_modules"] = hf_status
+    payload["hf_ready"] = bool(payload.get("cuda_available")) and all(
+        bool(hf_status[name]["installed"]) for name in hf_modules
+    )
 
-    payload["ok"] = bool(payload.get("cuda_available")) and bool(payload.get("axolotl_installed"))
+    reasons: list[str] = []
+    if not bool(payload.get("cuda_available")):
+        reasons.append("cuda_unavailable")
+
+    if not bool(payload.get("hf_ready")):
+        missing = [name for name, status in hf_status.items() if not bool(status["installed"])]
+        reasons.append(f"hf_deps_missing({','.join(missing)})" if missing else "hf_backend_unusable")
+
+    payload["reasons"] = reasons
+    payload["ok"] = len(reasons) == 0
     print(json.dumps(payload, ensure_ascii=False))
     return 0
 

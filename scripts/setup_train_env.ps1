@@ -3,7 +3,6 @@ param(
   [string]$VenvPath = ".venvtrain311",
   [switch]$CpuOnly,
   [switch]$SkipPythonInstall,
-  [switch]$SkipAxolotl,
   [switch]$Recreate
 )
 
@@ -104,42 +103,51 @@ function Install-TrainDeps {
   } catch {
     Write-WarnLine "bitsandbytes kurulumu basarisiz oldu. 4-bit egitim bu ortamda devre disi olabilir."
   }
-
-  if ($SkipAxolotl) {
-    Write-Step "axolotl kurulumu atlandi."
-    return
-  }
-
-  Write-Step "axolotl kurulumu deneniyor..."
-  try {
-    & $PythonExe -m pip install --upgrade axolotl
-  } catch {
-    Write-WarnLine "axolotl kurulumu basarisiz oldu. Bu durumda sadece dataset hazirlama adimlari calisir."
-  }
 }
 
 function Verify-Env {
-  param([string]$PythonExe)
+  param(
+    [string]$PythonExe,
+    [string]$BackendName
+  )
 
-  $verify = @'
-import importlib.util
-import json
+  $verifyScript = Join-Path (Get-Location) "scripts\check_train_env.py"
+  if (-not (Test-Path $verifyScript)) {
+    throw "Dogrulama scripti bulunamadi: $verifyScript"
+  }
 
-payload = {"ok": True}
-try:
-    import torch
-    payload["torch_version"] = str(torch.__version__)
-    payload["cuda_available"] = bool(torch.cuda.is_available())
-    payload["cuda_device_count"] = int(torch.cuda.device_count()) if torch.cuda.is_available() else 0
-except Exception as exc:
-    payload["ok"] = False
-    payload["torch_error"] = str(exc)
+  $verifyOutput = & $PythonExe $verifyScript --backend $BackendName 2>&1
+  if ($LASTEXITCODE -ne 0) {
+    $details = ($verifyOutput | Out-String).Trim()
+    throw "Train ortam dogrulamasi calistirilamadi. $details"
+  }
 
-payload["axolotl_installed"] = importlib.util.find_spec("axolotl") is not None
-payload["bitsandbytes_installed"] = importlib.util.find_spec("bitsandbytes") is not None
-print(json.dumps(payload, ensure_ascii=False))
-'@
-  & $PythonExe -c $verify
+  $verifyText = ($verifyOutput | Out-String).Trim()
+  if (-not $verifyText) {
+    throw "Train ortam dogrulamasi bos cikti verdi."
+  }
+
+  try {
+    $payload = $verifyText | ConvertFrom-Json -ErrorAction Stop
+  } catch {
+    throw "Train ortam dogrulamasi JSON parse edilemedi. Cikti: $verifyText"
+  }
+
+  $status = [ordered]@{
+    ok               = [bool]$payload.ok
+    backend          = $BackendName
+    reasons          = @($payload.reasons)
+    payload          = $payload
+  }
+
+  Write-Host ($status | ConvertTo-Json -Depth 6 -Compress)
+
+  if (-not [bool]$payload.ok) {
+    $reasonText = if ($payload.reasons) { [string]::Join(', ', @($payload.reasons)) } else { "unknown" }
+    throw "Train ortam dogrulamasi basarisiz: $reasonText"
+  }
+
+  return $status
 }
 
 Ensure-Winget
@@ -149,7 +157,6 @@ Install-PipBase -PythonExe $venvPython
 Install-Torch -PythonExe $venvPython
 Install-TrainDeps -PythonExe $venvPython
 Write-Step "Dogrulama calisiyor..."
-Verify-Env -PythonExe $venvPython
+Verify-Env -PythonExe $venvPython -BackendName "hf" | Out-Null
 Write-Step "Tamamlandi."
 Write-Host "Kullanilacak train Python: $((Resolve-Path $venvPython).Path)"
-

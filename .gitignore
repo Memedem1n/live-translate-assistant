@@ -13,3 +13,17 @@ benchmark/reports/
 __pycache__/
 scripts/__pycache__/
 _smoke.ps1
+.venvtrain/
+output/
+!artifacts/
+artifacts/*
+!artifacts/finetune/
+artifacts/finetune/*
+!artifacts/finetune/interview_train.sft.v2.jsonl
+!artifacts/finetune/interview_train.sft.v2.valid.jsonl
+!artifacts/finetune/interview_quality_report.v2.json
+!output/
+output/*
+!output/jupyter-notebook/
+output/jupyter-notebook/*
+!output/jupyter-notebook/colab-t4-hf-qwen3b-training.ipynb
