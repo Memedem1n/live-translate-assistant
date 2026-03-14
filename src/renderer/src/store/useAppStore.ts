@@ -139,6 +139,26 @@ export const useAppStore = create<AppStore>((set) => ({
     set((state) => {
       const idx = state.assistUpdates.findIndex((item) => item.id === event.id)
       if (idx === -1) {
+        const streamKey = event.segmentId || event.transcriptId
+        const streamIdx = [...state.assistUpdates].findIndex(
+          (item) => (item.segmentId || item.transcriptId) === streamKey
+        )
+
+        if (streamIdx !== -1) {
+          const existing = state.assistUpdates[streamIdx]
+          if (existing.state === 'final' && event.state === 'partial') {
+            return state
+          }
+
+          const cloned = [...state.assistUpdates]
+          cloned[streamIdx] = {
+            ...existing,
+            ...event
+          }
+
+          return { assistUpdates: cloned }
+        }
+
         return {
           assistUpdates: [...state.assistUpdates.slice(-399), event]
         }

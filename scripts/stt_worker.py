@@ -33,10 +33,10 @@ from typing import Dict, Optional
 
 from runtime_env import detect_cuda_runtime, is_cuda_runtime_error, load_whisper_model
 
-MIN_AUDIO_MS = 560
-SILENCE_MS = 540
-VOICE_RMS_THRESHOLD = 320.0
-CHECK_INTERVAL_SEC = 0.08
+MIN_AUDIO_MS = 420
+SILENCE_MS = 320
+VOICE_RMS_THRESHOLD = 220.0
+CHECK_INTERVAL_SEC = 0.05
 DEFAULT_SAMPLE_RATE = 16000
 DIAGNOSTIC_INTERVAL_MS = 250
 MAX_CUDA_RETRY = 3
@@ -329,10 +329,10 @@ def transcribe_pcm(
         segments, info = model.transcribe(
             wav_path,
             language=forced_language,
-            beam_size=3,
-            best_of=3,
+            beam_size=1,
+            best_of=1,
             temperature=0.0,
-            vad_filter=True,
+            vad_filter=False,
             condition_on_previous_text=False,
         )
         info_language = getattr(info, "language", None) if info else None
@@ -695,5 +695,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
 

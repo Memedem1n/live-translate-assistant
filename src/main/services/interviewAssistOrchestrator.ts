@@ -13,8 +13,15 @@ import { AssistService } from './assistService'
 import { ProfileMemoryService } from './profileMemoryService'
 import { classifyAssistIntent, resolveAssistAnswerMode } from '../utils/assistIntent'
 
-const CANDIDATE_SOURCE_TYPES: ProfileSourceType[] = ['cv', 'github', 'linkedin', 'job_desc', 'note']
+const PERSONAL_EVIDENCE_SOURCE_TYPES: ProfileSourceType[] = ['cv', 'github', 'linkedin', 'note']
+const CANDIDATE_SUPPORT_SOURCE_TYPES: ProfileSourceType[] = ['job_desc']
 const KNOWLEDGE_SOURCE_TYPES: ProfileSourceType[] = ['knowledge_base', 'web_corpus', 'glossary']
+
+interface ResolvedContextBundle {
+  supportingContextLines: string[]
+  personalEvidenceLines: string[]
+  requiresHonestExperienceDisclosure: boolean
+}
 
 interface GenerateInterviewAssistInput {
   providerConfig: ProviderConfig
@@ -42,7 +49,7 @@ export class InterviewAssistOrchestrator {
   async generate(input: GenerateInterviewAssistInput): Promise<AssistEvent> {
     const intentClass: AssistIntentClass = classifyAssistIntent(input.sourceText)
     const answerMode: AssistAnswerMode = resolveAssistAnswerMode(intentClass, input.assistCompositionPolicy)
-    const personalizedContextLines = this.resolvePersonalizedContextLines(input, intentClass)
+    const resolvedContext = this.resolveContextBundle(input, intentClass)
 
     const response = await this.assistService.generate({
       providerConfig: input.providerConfig,
@@ -51,7 +58,9 @@ export class InterviewAssistOrchestrator {
       sourceText: input.sourceText,
       sourceLanguage: input.sourceLanguage,
       contextLines: input.contextLines,
-      personalizedContextLines,
+      supportingContextLines: resolvedContext.supportingContextLines,
+      personalEvidenceLines: resolvedContext.personalEvidenceLines,
+      requiresHonestExperienceDisclosure: resolvedContext.requiresHonestExperienceDisclosure,
       answerStyle: input.answerStyle,
       intentClass,
       answerMode,
@@ -64,47 +73,90 @@ export class InterviewAssistOrchestrator {
       ...response,
       intentClass,
       answerMode,
-      personalizationMode: personalizedContextLines.length > 0 ? 'personalized' : 'generic_fallback'
+      personalizationMode:
+        resolvedContext.personalEvidenceLines.length > 0 ? 'personalized' : 'generic_fallback'
     }
   }
 
-  private resolvePersonalizedContextLines(
+  private resolveContextBundle(
     input: GenerateInterviewAssistInput,
     intentClass: AssistIntentClass
-  ): string[] {
+  ): ResolvedContextBundle {
+    const emptyResult: ResolvedContextBundle = {
+      supportingContextLines: [],
+      personalEvidenceLines: [],
+      requiresHonestExperienceDisclosure: false
+    }
+
     if (input.productMode !== 'interview_live' && input.productMode !== 'interview_practice') {
-      return []
+      return emptyResult
     }
     if (!input.personalizationEnabled) {
-      return []
+      return emptyResult
     }
 
     const policy = input.assistPersonalizationPolicy
+    let personalEvidenceLines: string[] = []
+    let candidateSupportLines: string[] = []
+    let knowledgeContextLines: string[] = []
+
     if (policy === 'always') {
-      return this.combineUnique([
-        ...this.lookupContext(input.sourceText, 5, CANDIDATE_SOURCE_TYPES, 'mixed'),
-        ...this.lookupContext(input.sourceText, 2, KNOWLEDGE_SOURCE_TYPES, 'mixed')
-      ]).slice(0, 7)
+      personalEvidenceLines = this.lookupContext(
+        input.sourceText,
+        4,
+        PERSONAL_EVIDENCE_SOURCE_TYPES,
+        'mixed'
+      )
+      candidateSupportLines = this.lookupContext(
+        input.sourceText,
+        1,
+        CANDIDATE_SUPPORT_SOURCE_TYPES,
+        'mixed'
+      )
+      knowledgeContextLines = this.lookupContext(input.sourceText, 2, KNOWLEDGE_SOURCE_TYPES, 'mixed')
+    } else if (intentClass === 'technical_general') {
+      personalEvidenceLines = this.lookupContext(input.sourceText, 2, ['github', 'note'], intentClass)
+      knowledgeContextLines = this.lookupContext(input.sourceText, 5, KNOWLEDGE_SOURCE_TYPES, intentClass)
+    } else if (intentClass === 'candidate_specific') {
+      personalEvidenceLines = this.lookupContext(
+        input.sourceText,
+        6,
+        PERSONAL_EVIDENCE_SOURCE_TYPES,
+        intentClass
+      )
+      candidateSupportLines = this.lookupContext(
+        input.sourceText,
+        1,
+        CANDIDATE_SUPPORT_SOURCE_TYPES,
+        intentClass
+      )
+      knowledgeContextLines = this.lookupContext(input.sourceText, 2, KNOWLEDGE_SOURCE_TYPES, intentClass)
+    } else {
+      personalEvidenceLines = this.lookupContext(
+        input.sourceText,
+        3,
+        PERSONAL_EVIDENCE_SOURCE_TYPES,
+        intentClass
+      )
+      candidateSupportLines = this.lookupContext(
+        input.sourceText,
+        1,
+        CANDIDATE_SUPPORT_SOURCE_TYPES,
+        intentClass
+      )
+      knowledgeContextLines = this.lookupContext(input.sourceText, 3, KNOWLEDGE_SOURCE_TYPES, intentClass)
     }
 
-    if (intentClass === 'technical_general') {
-      return this.combineUnique([
-        ...this.lookupContext(input.sourceText, 5, KNOWLEDGE_SOURCE_TYPES, intentClass),
-        ...this.lookupContext(input.sourceText, 2, ['github', 'note'], intentClass)
-      ]).slice(0, 7)
+    return {
+      supportingContextLines: this.combineUnique([
+        ...personalEvidenceLines,
+        ...candidateSupportLines,
+        ...knowledgeContextLines
+      ]).slice(0, 7),
+      personalEvidenceLines: this.combineUnique(personalEvidenceLines).slice(0, 6),
+      requiresHonestExperienceDisclosure:
+        intentClass === 'candidate_specific' && personalEvidenceLines.length === 0
     }
-
-    if (intentClass === 'candidate_specific') {
-      return this.combineUnique([
-        ...this.lookupContext(input.sourceText, 6, CANDIDATE_SOURCE_TYPES, intentClass),
-        ...this.lookupContext(input.sourceText, 1, KNOWLEDGE_SOURCE_TYPES, intentClass)
-      ]).slice(0, 7)
-    }
-
-    return this.combineUnique([
-      ...this.lookupContext(input.sourceText, 4, CANDIDATE_SOURCE_TYPES, intentClass),
-      ...this.lookupContext(input.sourceText, 3, KNOWLEDGE_SOURCE_TYPES, intentClass)
-    ]).slice(0, 7)
   }
 
   private lookupContext(

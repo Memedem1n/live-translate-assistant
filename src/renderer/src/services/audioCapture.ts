@@ -26,6 +26,10 @@ interface CaptureStartOptions {
   onFatalError?: (error: Error) => void
 }
 
+interface RedetectAudioSourceOptions {
+  promptUser?: boolean
+}
+
 const AUTO_SOURCE_PROBE_MS = 900
 const AUTO_SOURCE_ACTIVE_RMS_THRESHOLD = 70
 const REMOTE_HEALTH_WINDOW_MS = 3500
@@ -728,11 +732,11 @@ export class MeetingAudioCapture {
       this.diagnostics.sourceHealth = 'suspect'
       this.setCaptureError(
         'device_not_found',
-        'System audio source reconnect failed. Select another source and restart the session.'
+        'System audio source reconnect failed. Select another source and use Redetect.'
       )
       this.onFatalError?.(
         new Error(
-          'System audio source reconnect failed. Select another source and restart the session.'
+          'System audio source reconnect failed. Select another source and use Redetect.'
         )
       )
     } finally {
@@ -758,11 +762,65 @@ export class MeetingAudioCapture {
     }
   }
 
+  private async switchToDisplayPickerSource(
+    reason: NonNullable<CaptureDiagnosticsEvent['lastSwitchReason']>
+  ): Promise<boolean> {
+    try {
+      await this.remoteChannel.startSystemViaDisplayPicker(this.buildRemoteOptions())
+      const selectedSource: AudioSourceItem = {
+        id: 'display-media:auto',
+        name: 'Display Media Picker'
+      }
+
+      this.systemSourceId = selectedSource.id
+      this.systemSourceName = selectedSource.name
+      this.diagnostics.activeSourceId = selectedSource.id
+      this.diagnostics.activeSourceName = selectedSource.name
+      this.diagnostics.sourceSwitchCount = (this.diagnostics.sourceSwitchCount || 0) + 1
+      this.diagnostics.lastSwitchReason = reason
+      this.lastSourceSwitchMs = Date.now()
+      this.remoteLevelHistory = []
+      this.lastRemoteActiveMs = Date.now()
+      this.sourceScores.set(selectedSource.id, LIVE_SWITCH_MIN_SCORE)
+      this.clearCaptureError()
+      this.emitDiagnostics(true)
+      this.onSourceChanged?.(selectedSource)
+      return true
+    } catch (error) {
+      const classified = classifyCaptureError(error, 'system')
+      this.setCaptureError(classified.code, classified.message)
+      return false
+    }
+  }
+
   private async wait(ms: number): Promise<void> {
     await new Promise((resolve) => window.setTimeout(resolve, ms))
   }
 
-  async redetectAudioSource(): Promise<boolean> {
+  async redetectAudioSource(options: RedetectAudioSourceOptions = {}): Promise<boolean> {
+    if (this.stopped) {
+      return false
+    }
+
+    const shouldPromptUser =
+      options.promptUser === true || (this.strategy === 'picker_each_start' && !this.systemSourceId)
+    if (shouldPromptUser && this.strategy !== 'manual') {
+      return this.switchToDisplayPickerSource('manual_override')
+    }
+
+    const canRetryCurrentSource =
+      !!this.systemSourceId && !this.systemSourceId.startsWith('display-media:')
+    if (canRetryCurrentSource) {
+      const reused = await this.trySwitchRemoteSource(this.systemSourceId, this.systemSourceName)
+      if (reused) {
+        return true
+      }
+    }
+
+    if (this.strategy === 'manual') {
+      return false
+    }
+
     return this.maybeSwitchSourceByHealth('manual_override', true)
   }
 

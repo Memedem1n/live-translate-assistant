@@ -20,6 +20,19 @@ const LEGACY_DEFAULT_VAD: VadConfig = {
 
 const DEFAULT_VAD: VadConfig = {
   remote: {
+    minAudioMs: 220,
+    silenceMs: 170,
+    voiceRmsThreshold: 210
+  },
+  self: {
+    minAudioMs: 460,
+    silenceMs: 420,
+    voiceRmsThreshold: 210
+  }
+}
+
+const PREVIOUS_DEFAULT_VAD: VadConfig = {
+  remote: {
     minAudioMs: 560,
     silenceMs: 540,
     voiceRmsThreshold: 320
@@ -67,7 +80,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   autoHideControlWindow: true,
   captureMicrophone: false,
   systemAudioMode: 'auto',
-  systemAudioStrategy: 'auto_live',
+  systemAudioStrategy: 'picker_each_start',
   manualSystemSourceId: '',
   historyOptIn: false,
   hotkeys: {
@@ -110,6 +123,17 @@ function isLegacyDefaultVad(config: VadConfig): boolean {
     config.self.minAudioMs === LEGACY_DEFAULT_VAD.self.minAudioMs &&
     config.self.silenceMs === LEGACY_DEFAULT_VAD.self.silenceMs &&
     config.self.voiceRmsThreshold === LEGACY_DEFAULT_VAD.self.voiceRmsThreshold
+  )
+}
+
+function isPreviousDefaultVad(config: VadConfig): boolean {
+  return (
+    config.remote.minAudioMs === PREVIOUS_DEFAULT_VAD.remote.minAudioMs &&
+    config.remote.silenceMs === PREVIOUS_DEFAULT_VAD.remote.silenceMs &&
+    config.remote.voiceRmsThreshold === PREVIOUS_DEFAULT_VAD.remote.voiceRmsThreshold &&
+    config.self.minAudioMs === PREVIOUS_DEFAULT_VAD.self.minAudioMs &&
+    config.self.silenceMs === PREVIOUS_DEFAULT_VAD.self.silenceMs &&
+    config.self.voiceRmsThreshold === PREVIOUS_DEFAULT_VAD.self.voiceRmsThreshold
   )
 }
 
@@ -188,13 +212,9 @@ function normalizeSettings(settings: AppSettings): AppSettings {
   next.captureMicrophone = next.captureMicrophone === true
   next.systemAudioMode = next.systemAudioMode === 'manual' ? 'manual' : 'auto'
   next.systemAudioStrategy =
-    next.systemAudioStrategy === 'picker_each_start'
-      ? 'picker_each_start'
-      : next.systemAudioStrategy === 'manual'
-        ? 'manual'
-        : next.systemAudioMode === 'manual'
-          ? 'manual'
-          : 'auto_live'
+    next.systemAudioStrategy === 'manual' || next.systemAudioMode === 'manual'
+      ? 'manual'
+      : 'picker_each_start'
   next.manualSystemSourceId = String(next.manualSystemSourceId || '')
   next.historyOptIn = next.historyOptIn === true
   next.vad = clampVad(next.vad)
@@ -289,7 +309,8 @@ export class SettingsManager {
         : legacyProviderConfig(parsed.answerModel, parsed.ollamaBaseUrl)
 
       const vad = parsed.vad ? clampVad(parsed.vad) : { ...DEFAULT_SETTINGS.vad }
-      const normalizedVad = isLegacyDefaultVad(vad) ? clampVad(DEFAULT_VAD) : vad
+      const normalizedVad =
+        isLegacyDefaultVad(vad) || isPreviousDefaultVad(vad) ? clampVad(DEFAULT_VAD) : vad
 
       const loaded: AppSettings = {
         productMode: parsed.productMode === 'interview_practice' ? 'interview_practice' : 'interview_live',
@@ -321,11 +342,7 @@ export class SettingsManager {
         captureMicrophone: parsed.captureMicrophone === true,
         systemAudioMode: parsed.systemAudioMode === 'manual' ? 'manual' : 'auto',
         systemAudioStrategy:
-          parsed.systemAudioStrategy === 'picker_each_start'
-            ? 'picker_each_start'
-            : parsed.systemAudioStrategy === 'manual'
-              ? 'manual'
-              : 'auto_live',
+          parsed.systemAudioStrategy === 'manual' ? 'manual' : 'picker_each_start',
         manualSystemSourceId: String(parsed.manualSystemSourceId || ''),
         historyOptIn: parsed.historyOptIn === true,
         hotkeys: {

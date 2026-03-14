@@ -45,7 +45,8 @@ describe('InterviewAssistOrchestrator', () => {
 
     expect(assistService.generate).toHaveBeenCalledTimes(1)
     const input = assistService.generate.mock.calls[0][0]
-    expect(input.personalizedContextLines.length).toBeGreaterThan(0)
+    expect(input.supportingContextLines.length).toBeGreaterThan(0)
+    expect(input.personalEvidenceLines.length).toBeGreaterThan(0)
     expect(input.intentClass).toBe('candidate_specific')
     expect(result.personalizationMode).toBe('personalized')
   })
@@ -90,7 +91,63 @@ describe('InterviewAssistOrchestrator', () => {
     })
 
     const input = assistService.generate.mock.calls[0][0]
-    expect(input.personalizedContextLines).toEqual([])
+    expect(input.supportingContextLines).toEqual([])
+    expect(input.personalEvidenceLines).toEqual([])
+    expect(result.personalizationMode).toBe('generic_fallback')
+  })
+
+  it('forces honest fallback when personal evidence is missing for candidate-specific questions', async () => {
+    const assistService = {
+      generate: vi.fn().mockResolvedValue({
+        id: 'a3',
+        transcriptId: 't3',
+        state: 'final',
+        latencyMs: 110
+      })
+    } as any
+    const profileMemory = {
+      getContextLines: vi
+        .fn()
+        .mockImplementation((_query: string, _limit: number, options?: { allowedSourceTypes?: string[] }) => {
+          if (options?.allowedSourceTypes?.includes('knowledge_base')) {
+            return ['[profile:knowledge_base] Kafka keeps producers and consumers decoupled.']
+          }
+          return []
+        })
+    } as any
+
+    const orchestrator = new InterviewAssistOrchestrator(assistService, profileMemory)
+    const result = await orchestrator.generate({
+      providerConfig: {
+        inference: {
+          kind: 'ollama',
+          baseUrl: 'http://127.0.0.1:11434',
+          model: 'llama3.1:8b-instruct-q4_K_M'
+        },
+        translation: {
+          enabled: false,
+          kind: 'ollama',
+          baseUrl: 'http://127.0.0.1:11434',
+          model: 'qwen2.5:3b-instruct-q4_K_M'
+        }
+      },
+      transcriptId: 't3',
+      sourceText: 'Have you used Kafka in production before?',
+      sourceLanguage: 'en',
+      contextLines: [],
+      productMode: 'interview_live',
+      personalizationEnabled: true,
+      assistPersonalizationPolicy: 'intent_aware',
+      assistCompositionPolicy: 'auto',
+      answerStyle: 'natural_first_person'
+    })
+
+    const input = assistService.generate.mock.calls[0][0]
+    expect(input.personalEvidenceLines).toEqual([])
+    expect(input.supportingContextLines).toEqual([
+      '[profile:knowledge_base] Kafka keeps producers and consumers decoupled.'
+    ])
+    expect(input.requiresHonestExperienceDisclosure).toBe(true)
     expect(result.personalizationMode).toBe('generic_fallback')
   })
 })

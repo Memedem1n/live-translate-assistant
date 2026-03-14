@@ -5,6 +5,35 @@ import {
   ProviderWarmupInput
 } from './inferenceProvider'
 
+async function buildOllamaError(response: Response, model: string): Promise<Error> {
+  let detail = ''
+
+  try {
+    const raw = await response.text()
+    if (raw) {
+      try {
+        const parsed = JSON.parse(raw) as { error?: string }
+        detail = String(parsed.error || '').trim()
+      } catch {
+        detail = raw.trim()
+      }
+    }
+  } catch {
+    detail = ''
+  }
+
+  if (response.status === 404) {
+    const suffix = detail ? ` ${detail}` : ` Model "${model}" was not found in Ollama.`
+    return new Error(`Ollama request failed with status 404.${suffix}`)
+  }
+
+  return new Error(
+    detail
+      ? `Ollama request failed with status ${response.status}. ${detail}`
+      : `Ollama request failed with status ${response.status}`
+  )
+}
+
 export class OllamaInferenceProvider implements InferenceProvider {
   async prewarm(input: ProviderWarmupInput): Promise<number> {
     const startedAt = Date.now()
@@ -51,7 +80,7 @@ export class OllamaInferenceProvider implements InferenceProvider {
     })
 
     if (!response.ok) {
-      throw new Error(`Ollama request failed with status ${response.status}`)
+      throw await buildOllamaError(response, input.model)
     }
 
     if (input.stream === false) {

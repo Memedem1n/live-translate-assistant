@@ -16,13 +16,23 @@ describe('classifyAssistIntent', () => {
     expect(intent).toBe('candidate_specific')
   })
 
-  it('detects mixed interview questions', () => {
+  it('treats technical-weighted mixed questions as technical_general', () => {
     const intent = classifyAssistIntent('In your experience, how does Kubernetes improve reliability?')
-    expect(intent).toBe('mixed')
+    expect(intent).toBe('technical_general')
   })
 
   it('maps personal daily prompts to candidate-specific intent', () => {
     const intent = classifyAssistIntent('I wonder how your day went as a software engineer.')
+    expect(intent).toBe('candidate_specific')
+  })
+
+  it('treats direct experience questions as candidate specific', () => {
+    const intent = classifyAssistIntent('Have you used Kafka in production before?')
+    expect(intent).toBe('candidate_specific')
+  })
+
+  it('treats familiarity questions as candidate specific', () => {
+    const intent = classifyAssistIntent('Are you familiar with Terraform?')
     expect(intent).toBe('candidate_specific')
   })
 })

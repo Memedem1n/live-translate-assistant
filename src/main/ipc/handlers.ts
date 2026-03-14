@@ -86,10 +86,10 @@ const START_SESSION_TIMEOUT_MS = 240000
 const LATENCY_HISTORY_LIMIT = 300
 const STT_CUDA_RETRY_COUNT = 1
 const ASSIST_PREWARM_TIMEOUT_MS = 5000
-const REMOTE_SEGMENT_PUNCT_FLUSH_MS = 320
-const REMOTE_SEGMENT_PAUSE_FLUSH_MS = 1200
-const REMOTE_SEGMENT_MAX_HOLD_MS = 4200
-const REMOTE_SEGMENT_MERGE_GAP_MS = 2200
+const REMOTE_SEGMENT_PUNCT_FLUSH_MS = 180
+const REMOTE_SEGMENT_PAUSE_FLUSH_MS = 650
+const REMOTE_SEGMENT_MAX_HOLD_MS = 2600
+const REMOTE_SEGMENT_MERGE_GAP_MS = 1800
 const ASSIST_QUEUE_MAX = 2
 const SELF_ECHO_HOLD_MS = 650
 const SELF_ECHO_WINDOW_MS = 1400
@@ -2063,6 +2063,5 @@ export function cleanupIpcHandlers(): void {
   ipcMain.removeHandler('assistant:toggle-mute')
   ipcMain.removeHandler('session:redetect-audio-source')
 }
-
 
 

@@ -21,6 +21,11 @@ const PERSONAL_MARKERS = [
   /\b(tell me about yourself|walk me through your|your background|your experience)\b/i,
   /\btell me about your\b/i,
   /\b(in your experience|you worked on|you built|you led|you shipped)\b/i,
+  /\b(have you (?:ever )?(?:worked|used|done|built|led|managed|owned|implemented|shipped))\b/i,
+  /\b(have you had experience with)\b/i,
+  /\b(do you have (?:any )?experience with)\b/i,
+  /\b(are you familiar with)\b/i,
+  /\b(worked with .+ before|used .+ before|done .+ before|used .+ in production)\b/i,
   /\b(my project|my experience|my role|our project)\b/i,
   /\b(resume|cv|linkedin|github)\b/i
 ]
@@ -58,6 +63,9 @@ export function classifyInterviewQuestionFlavor(rawText: string): InterviewQuest
   }
 
   if (personalHits > 0 && generalHits > 0) {
+    if (generalHits >= personalHits) {
+      return 'technical_general'
+    }
     return 'mixed'
   }
 

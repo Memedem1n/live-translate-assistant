@@ -7,6 +7,8 @@ import './styles.css'
 async function bootstrap(): Promise<void> {
   const params = new URLSearchParams(window.location.search)
   const view = params.get('view') === 'overlay' ? 'overlay' : 'control'
+  document.documentElement.dataset.view = view
+  document.body.dataset.view = view
   useAppStore.getState().setView(view)
 
   try {

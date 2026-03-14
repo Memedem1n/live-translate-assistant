@@ -1,60 +1,48 @@
-# Last Session - 2026-03-06
+# Last Session - 2026-03-14
 
 ## Completed Today
 
-- Implemented benchmark lock groundwork:
-  - provider-agnostic benchmark runner for `ollama` and `openai_compatible`
-  - fixed prompt quality suite and scoring rubric
-  - model sweep recommendation logic for `Llama 3.1 8B` vs `Qwen 2.5 7B`
-- Implemented session review flow:
-  - review labels: `chosen | rejected | skipped | unreviewed`
-  - review tags persisted in local encrypted history
-  - session detail + review update IPC
-  - control window review queue and session detail panel
-- Implemented DPO preparation upgrades:
-  - reviewed session export ingestion in `build_dpo_pairs.py`
-  - sampled completion support for prompt-aligned pair building
-  - `prompt_key` emission in completion sampling script
-- Added benchmark artifacts and scripts:
-  - `benchmark/prompts/live_answer_set.json`
-  - `benchmark/prompts/quality_rubric.json`
-  - updated `package.json` commands for benchmark and DPO prep
+- Reworked runtime answer behavior:
+  - deeper spoken responses for technical questions
+  - honest fallback for unsupported personal-experience questions
+  - clearer session warning/error messaging
+- Rebuilt the main UI:
+  - simplified `Live / Practice / Prepare` tabs
+  - moved technical controls into `Advanced`
+  - refreshed layout, hierarchy, and general styling
+- Reworked the overlay island:
+  - larger dark teleprompter surface
+  - removed pale background bleed
+  - fixed misleading `warming` label when idle
+- Stabilized local runtime behavior:
+  - fixed `faster_whisper` environment issue via `.venv311`
+  - clarified Ollama 404 warmup warnings
+  - switched active local answer model to an installed Ollama model
+- Reduced STT latency:
+  - faster remote VAD defaults
+  - lighter decode settings in `stt_worker.py`
+  - quicker transcript flush behavior for live listening
+- Completed local HF training run review:
+  - `qwen3b` full run finished successfully
+  - adapter/manual inference path wired for local testing
 
 ## Validation Status
 
-- `python -m py_compile` passed for updated Python scripts
 - `npm run typecheck` passed
-- `npm run test` passed
+- `npm run test` passed earlier in the session after runtime/prompt changes
 - `npm run build` passed
-- `build_dpo_pairs.py` runs successfully with current inputs
+- `python -m py_compile scripts/stt_worker.py` passed
 
 ## Current State
 
-- Code path is ready for:
-  - Stage A benchmark
-  - reviewed session labeling
-  - DPO pool generation
-- Actual benchmark has not been run yet
-- Actual reviewed session exports do not exist yet
-- Current DPO pair count is `0` because:
-  - `artifacts/session_exports` is missing
-  - `artifacts/curation/sft_completion_samples.jsonl` is missing
+- App opens cleanly with the new UI/overlay path
+- Local Ollama answer profile is aligned to an installed model
+- Overlay should now render only the dark island surface
+- STT should feel faster, but live manual validation is still needed on real meeting/tab audio
 
 ## Tomorrow First Priority
 
-1. Run Stage A benchmark
-   - expected duration: `30-50 min`
-   - goal: lock local default model
-2. Pick the winner model
-   - `Llama 3.1 8B` or `Qwen 2.5 7B`
-3. Run stable LoRA smoke on the winner
-4. Collect reviewed session exports
-5. Generate sampled completions + DPO pairs
-
-## Useful Commands
-
-```powershell
-npm run benchmark:sweep
-npm run finetune:sample-dpo
-npm run finetune:build-dpo-pairs
-```
+1. Run live end-to-end validation on real browser/system audio
+2. Measure whether STT latency improved enough in practical use
+3. Tune answer depth vs speed after hands-on testing
+4. Review remaining UX polish items and prioritize next iteration

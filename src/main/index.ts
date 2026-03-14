@@ -69,13 +69,13 @@ function createControlWindow(): BrowserWindow {
 
 function createOverlayWindow(): BrowserWindow {
   const { width, height } = screen.getPrimaryDisplay().workAreaSize
-  const overlayWidth = Math.min(920, Math.max(620, Math.round(width * 0.6)))
-  const overlayHeight = Math.min(700, Math.max(420, Math.round(height * 0.52)))
+  const overlayWidth = Math.min(1180, Math.max(760, Math.round(width * 0.72)))
+  const overlayHeight = Math.min(760, Math.max(460, Math.round(height * 0.56)))
   const window = new BrowserWindow({
     width: overlayWidth,
     height: overlayHeight,
-    minWidth: 620,
-    minHeight: 420,
+    minWidth: 760,
+    minHeight: 460,
     frame: false,
     transparent: true,
     alwaysOnTop: true,
@@ -241,5 +241,4 @@ app.on('will-quit', () => {
   tray = null
   cleanupIpcHandlers()
 })
-
 

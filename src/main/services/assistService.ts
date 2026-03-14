@@ -17,7 +17,9 @@ interface GenerateAssistInput {
   sourceText: string
   sourceLanguage?: string
   contextLines: string[]
-  personalizedContextLines?: string[]
+  supportingContextLines?: string[]
+  personalEvidenceLines?: string[]
+  requiresHonestExperienceDisclosure?: boolean
   answerStyle?: InterviewAnswerStyle
   intentClass?: AssistIntentClass
   answerMode?: AssistAnswerMode
@@ -33,10 +35,6 @@ interface ParsedAssist {
 }
 
 const DEFAULT_TIMEOUT_MS = 12000
-const PRIMARY_PROMPT =
-  'You are a live technical interview copilot. Return strict minified JSON only with keys answer_en, confidence, and risk_flags. ' +
-  'answer_en must sound like a real candidate speaking in first person, in natural English, in 3 to 5 sentences. ' +
-  'Do not use STAR labels. Do not mention being an AI. Stay grounded in the provided persona context and latest interviewer question.'
 const FALLBACK_PROMPT =
   'Return valid minified JSON only with keys answer_en, confidence, and risk_flags. answer_en must be first-person natural spoken English.'
 
@@ -68,6 +66,144 @@ function sanitizeAnswer(value: string): string {
     .join(' ')
     .replace(/\s+/g, ' ')
     .trim()
+}
+
+function isTechnicalDeepResponse(
+  intentClass?: AssistIntentClass,
+  answerMode?: AssistAnswerMode
+): boolean {
+  return intentClass === 'technical_general' || (intentClass === 'mixed' && answerMode === 'general_first')
+}
+
+function containsHonestyDisclosure(value: string): boolean {
+  const text = sanitizeAnswer(value).toLowerCase()
+  return (
+    /\bi (?:have not|haven't) (?:worked|used|done|built|led|managed|owned)\b/.test(text) ||
+    /\bi do not have direct\b/.test(text) ||
+    /\bi don't have direct\b/.test(text) ||
+    /\bnot worked with that directly\b/.test(text) ||
+    /\bnot used that directly\b/.test(text) ||
+    /\bnot done that directly\b/.test(text)
+  )
+}
+
+function hasUnsupportedExperienceClaim(value: string): boolean {
+  const text = sanitizeAnswer(value).toLowerCase()
+  if (containsHonestyDisclosure(text)) {
+    return false
+  }
+
+  return (
+    /\bi worked on\b/.test(text) ||
+    /\bi used\b/.test(text) ||
+    /\bi built\b/.test(text) ||
+    /\bi led\b/.test(text) ||
+    /\bi shipped\b/.test(text) ||
+    /\bmy experience with\b/.test(text) ||
+    /\bi have experience with\b/.test(text) ||
+    /\bi've worked with\b/.test(text) ||
+    /\bi've used\b/.test(text)
+  )
+}
+
+function enforceHonestyLead(value: string): string {
+  const answer = sanitizeAnswer(value)
+  if (!answer) {
+    return 'I have not worked with that directly before, but I understand the core ideas and how I would approach it.'
+  }
+  if (containsHonestyDisclosure(answer)) {
+    return answer
+  }
+  return sanitizeAnswer(
+    `I have not worked with that directly before, but I understand the core ideas and how I would approach it. ${answer}`
+  )
+}
+
+function buildSystemPrompt(
+  intentClass?: AssistIntentClass,
+  answerMode?: AssistAnswerMode,
+  requiresHonestExperienceDisclosure = false
+): string {
+  let shared =
+    'You are a live technical interview copilot. Return strict minified JSON only with keys answer_en, confidence, and risk_flags. ' +
+    'Do not use STAR labels. Do not mention being an AI. Stay grounded in the provided persona context and latest interviewer question. '
+
+  if (requiresHonestExperienceDisclosure) {
+    shared +=
+      'If direct personal experience is not supported by the candidate evidence, explicitly say you have not done it directly. ' +
+      'Do not invent projects, ownership, production usage, or prior hands-on work. ' +
+      'It is fine to mention conceptual understanding, adjacent experience, and how you would approach the problem honestly. '
+  }
+
+  if (isTechnicalDeepResponse(intentClass, answerMode)) {
+    return (
+      shared +
+      'answer_en must sound like a strong candidate speaking naturally in first person, in 7 to 10 spoken sentences. ' +
+      'Start with a direct answer, explain the mechanism clearly, include one real tradeoff or failure mode, and end with one concrete example, metric, or validation step. ' +
+      'Keep it concise enough to speak in under one minute.'
+    )
+  }
+
+  if (intentClass === 'mixed') {
+    return (
+      shared +
+      'answer_en must sound like a real candidate speaking in first person, in natural English, in 5 to 7 sentences. ' +
+      'Blend concrete personal context with one short technical explanation or tradeoff when useful.'
+    )
+  }
+
+  return (
+    shared +
+    'answer_en must sound like a real candidate speaking in first person, in natural English, in 3 to 5 sentences.'
+  )
+}
+
+export function extractAnswerFromJsonFragment(raw: string): string {
+  const cleaned = cleanJson(raw)
+  const marker = cleaned.match(/"answer_en"\s*:\s*"/i)
+  if (!marker || marker.index === undefined) {
+    return ''
+  }
+
+  let cursor = marker.index + marker[0].length
+  let output = ''
+  let escaping = false
+
+  while (cursor < cleaned.length) {
+    const char = cleaned[cursor]
+    cursor += 1
+
+    if (escaping) {
+      if (char === 'n' || char === 'r' || char === 't') {
+        output += ' '
+      } else if (char === '"' || char === '\\' || char === '/') {
+        output += char
+      } else if (char === 'u') {
+        const hex = cleaned.slice(cursor, cursor + 4)
+        if (/^[0-9a-fA-F]{4}$/.test(hex)) {
+          output += String.fromCharCode(Number.parseInt(hex, 16))
+          cursor += 4
+        }
+      } else {
+        output += char
+      }
+      escaping = false
+      continue
+    }
+
+    if (char === '\\') {
+      escaping = true
+      continue
+    }
+
+    if (char === '"') {
+      break
+    }
+
+    output += char
+  }
+
+  return sanitizeAnswer(output)
 }
 
 export class AssistService {
@@ -103,8 +239,10 @@ export class AssistService {
     const start = Date.now()
     const partialId = randomUUID()
     const sourceText = input.sourceText.trim()
-    const personalizedContextLines = input.personalizedContextLines || []
-    const mergedContext = [...input.contextLines, ...personalizedContextLines].slice(-24)
+    const personalEvidenceLines = input.personalEvidenceLines || []
+    const supportingContextLines = input.supportingContextLines || []
+    const personalizationMode: PersonalizationMode =
+      personalEvidenceLines.length > 0 ? 'personalized' : 'generic_fallback'
     const controller = new AbortController()
     const timeoutMs = input.timeoutMs ?? DEFAULT_TIMEOUT_MS
 
@@ -137,12 +275,27 @@ export class AssistService {
         apiKey: input.providerConfig.inference.apiKey,
         signal: controller.signal,
         stream: true,
-        systemPrompt: PRIMARY_PROMPT,
-        userPrompt: this.buildUserPrompt(sourceText, mergedContext, personalizedContextLines),
+        systemPrompt: buildSystemPrompt(
+          input.intentClass,
+          input.answerMode,
+          input.requiresHonestExperienceDisclosure === true
+        ),
+        userPrompt: this.buildUserPrompt(
+          sourceText,
+          input.contextLines,
+          supportingContextLines,
+          personalEvidenceLines,
+          input.intentClass,
+          input.answerMode,
+          input.requiresHonestExperienceDisclosure === true
+        ),
         onPartial: (raw, firstTokenMs) => {
-          const parsed = this.tryParse(raw)
-          const partialAnswer = sanitizeAnswer(parsed?.answerEn || '')
+          const partialAnswer = extractAnswerFromJsonFragment(raw)
           if (!partialAnswer) return
+          const visiblePartialAnswer =
+            input.requiresHonestExperienceDisclosure === true
+              ? enforceHonestyLead(partialAnswer)
+              : partialAnswer
           input.onPartial?.({
             id: partialId,
             transcriptId: input.transcriptId,
@@ -150,32 +303,52 @@ export class AssistService {
             sourceLanguage: input.sourceLanguage,
             sourceText,
             state: 'partial',
-            answerEn: partialAnswer,
+            answerEn: visiblePartialAnswer,
             rawText: raw,
             latencyMs: Date.now() - start,
             firstTokenMs: firstTokenMs ?? undefined,
-            personalizationMode: personalizedContextLines.length > 0 ? 'personalized' : 'generic_fallback',
+            personalizationMode,
             intentClass: input.intentClass,
             answerMode: input.answerMode,
             supportSignals: {
-              contextHitCount: personalizedContextLines.length,
+              contextHitCount: supportingContextLines.length,
               confidenceBand: 'medium',
-              riskFlags: []
+              riskFlags:
+                input.requiresHonestExperienceDisclosure === true
+                  ? ['missing_personal_evidence']
+                  : []
             }
           })
         }
       })
 
       const parsed = (await this.parseWithFallback(primary.raw, input, controller.signal)).parsed
-      const qualityFlags = this.collectQualityFlags(parsed.answerEn, parsed.riskFlags)
+      const answerEn =
+        input.requiresHonestExperienceDisclosure === true
+          ? enforceHonestyLead(parsed.answerEn)
+          : parsed.answerEn
+      const riskFlags = [...parsed.riskFlags]
+      if (input.requiresHonestExperienceDisclosure === true) {
+        riskFlags.push('missing_personal_evidence')
+      }
+      if (
+        input.requiresHonestExperienceDisclosure === true &&
+        hasUnsupportedExperienceClaim(parsed.answerEn)
+      ) {
+        riskFlags.push('ungrounded_experience_claim')
+      }
+      const qualityFlags = this.collectQualityFlags(answerEn, riskFlags)
       const helperAnswerTr = await this.translateIfEnabled(
-        parsed.answerEn,
+        answerEn,
         input.providerConfig,
         input.providerConfig.translation.enabled && input.providerConfig.translation.model ? 'tr' : '',
         controller.signal
       )
       const questionTr = await this.translateQuestionIfEnabled(sourceText, input.providerConfig, controller.signal)
-      const finalConfidence = clampConfidence(parsed.confidence)
+      const confidencePenalty =
+        (input.requiresHonestExperienceDisclosure === true ? 0.08 : 0) +
+        (riskFlags.includes('ungrounded_experience_claim') ? 0.14 : 0)
+      const finalConfidence = clampConfidence(parsed.confidence - confidencePenalty)
       const final: AssistEvent = {
         id: randomUUID(),
         transcriptId: input.transcriptId,
@@ -183,21 +356,21 @@ export class AssistService {
         sourceLanguage: input.sourceLanguage,
         sourceText,
         questionTr: questionTr || undefined,
-        answerEn: parsed.answerEn,
+        answerEn,
         helperAnswerTr: helperAnswerTr || undefined,
         confidence: finalConfidence,
         qualityFlags,
         supportSignals: {
-          contextHitCount: personalizedContextLines.length,
+          contextHitCount: supportingContextLines.length,
           confidenceBand: confidenceBand(finalConfidence),
-          riskFlags: parsed.riskFlags
+          riskFlags: Array.from(new Set(riskFlags))
         },
-        contextLinesUsed: personalizedContextLines.slice(0, 8),
+        contextLinesUsed: supportingContextLines.slice(0, 8),
         latencyMs: Date.now() - start,
         firstTokenMs: primary.firstTokenMs ?? undefined,
         fallbackUsed: false,
         parseMode: 'primary',
-        personalizationMode: personalizedContextLines.length > 0 ? 'personalized' : 'generic_fallback',
+        personalizationMode,
         intentClass: input.intentClass,
         answerMode: input.answerMode,
         state: 'final',
@@ -212,16 +385,50 @@ export class AssistService {
     }
   }
 
-  private buildUserPrompt(sourceText: string, contextLines: string[], personalizedContextLines: string[]): string {
-    const contextBlock = contextLines.length > 0 ? contextLines.join('\n') : '[no context]'
-    const personalizationMode: PersonalizationMode = personalizedContextLines.length > 0 ? 'personalized' : 'generic_fallback'
+  private buildUserPrompt(
+    sourceText: string,
+    contextLines: string[],
+    supportingContextLines: string[],
+    personalEvidenceLines: string[],
+    intentClass?: AssistIntentClass,
+    answerMode?: AssistAnswerMode,
+    requiresHonestExperienceDisclosure = false
+  ): string {
+    const conversationContextBlock =
+      contextLines.length > 0 ? contextLines.join('\n') : '[no conversation context]'
+    const personalEvidenceBlock =
+      personalEvidenceLines.length > 0
+        ? personalEvidenceLines.join('\n')
+        : '[no matched direct personal evidence found in candidate docs]'
+    const supportingContextBlock =
+      supportingContextLines.length > 0 ? supportingContextLines.join('\n') : '[no additional supporting context]'
+    const personalizationMode: PersonalizationMode =
+      personalEvidenceLines.length > 0 ? 'personalized' : 'generic_fallback'
+    const technicalDeep = isTechnicalDeepResponse(intentClass, answerMode)
+
     return [
       `Persona mode: ${personalizationMode}`,
       'Speak as the candidate in first person.',
-      'Keep the answer practical, specific, and interview-safe.',
+      requiresHonestExperienceDisclosure
+        ? 'Direct personal evidence is missing. Be explicit that you have not done it directly, then answer using adjacent knowledge or a practical approach.'
+        : 'Use direct personal evidence when it is present.',
+      technicalDeep
+        ? 'Answer like a senior engineer candidate: direct answer first, then mechanism, tradeoff, and one concrete example or validation step.'
+        : intentClass === 'mixed'
+          ? 'Keep the answer practical and specific, using both candidate context and one short technical explanation when useful.'
+          : 'Keep the answer practical, specific, and interview-safe.',
+      technicalDeep
+        ? 'Do not ramble. Prefer crisp spoken sentences that still show engineering depth.'
+        : 'Keep the pacing natural and easy to say out loud.',
       '',
-      'Context:',
-      contextBlock,
+      'Direct personal evidence from candidate docs:',
+      personalEvidenceBlock,
+      '',
+      'Supporting context:',
+      supportingContextBlock,
+      '',
+      'Conversation context:',
+      conversationContextBlock,
       '',
       'Latest interviewer question:',
       sourceText
@@ -368,6 +575,3 @@ export class AssistService {
     }
   }
 }
-
-
-
